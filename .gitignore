@@ -1,0 +1,31 @@
+# Personal databases and uploaded files
+backend/talent_platform.db*
+uploads/
+backend/uploads/
+
+# Secret settings and API keys
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Python-generated files
+backend/venv/
+backend/.cache/
+**/__pycache__/
+*.pyc
+
+# Frontend-generated files
+frontend/node_modules/
+frontend/.next/
+frontend/.env*
+!frontend/.env.local.example
+
+# macOS files
+.DS_Store
+**/.DS_Store
+.repair-backup/
+# Local backup and coding-assistant files
+*.save
+**/AGENTS.md
+**/CLAUDE.md
+.repair-backup/
