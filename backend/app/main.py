@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .database import engine, get_db
 from .models import Base
-from .routes import applications, company_interviews, interviews, jobs, students
+from .routes import applications, college, company_interviews, interviews, jobs, students
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,10 @@ def ensure_prototype_schema():
         if "target_role" not in student_columns:
             connection.execute(
                 text("ALTER TABLE students ADD COLUMN target_role VARCHAR")
+            )
+        if "password_hash" not in student_columns:
+            connection.execute(
+                text("ALTER TABLE students ADD COLUMN password_hash VARCHAR")
             )
         if "role_match_score" not in student_columns:
             connection.execute(
@@ -176,6 +180,7 @@ app.include_router(interviews.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(company_interviews.router)
+app.include_router(college.router)
 
 
 # Simple test endpoint for checking that the backend server is running.

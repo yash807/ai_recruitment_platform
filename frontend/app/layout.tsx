@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Talent Intelligence Prototype",
-  description: "Student and recruiter workflow prototype",
+  title: "AI Talent | Recruitment Intelligence Platform",
+  description:
+    "Connected career, hiring and placement workspaces for students, companies and colleges.",
 };
 
 export default function RootLayout({

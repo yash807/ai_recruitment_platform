@@ -25,7 +25,23 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Both workspaces should show `System online`.
+Open `http://localhost:3000`. The base page now provides three portals:
+
+- **Student** — profile creation/sign-in, resume analysis, mock interview, and
+  company job applications.
+- **Company** — the complete job-posting, candidate-matching, applicant-review,
+  and hiring-decision workflow.
+- **College** — college/cohort selection with application, interview, hiring,
+  rejection, and student-level placement insights.
+
+Each workspace should show `System online` when FastAPI and SQLite are available.
+
+## Student access
+
+New students create a profile before entering the dashboard. Passwords are
+stored as salted PBKDF2 hashes. The current sign-in flow is suitable for the
+prototype UI, but protected production accounts will still require server-side
+sessions or signed access tokens before public launch.
 
 ## Recruiter invitations
 

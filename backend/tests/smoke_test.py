@@ -37,6 +37,43 @@ def run() -> None:
         expect_status(health, 200)
         assert health.json() == {"status": "ok", "database": "ok"}
 
+        registered_student = client.post(
+            "/students/register",
+            json={
+                "name": "Registered Student",
+                "email": "registered@example.com",
+                "password": "secure-password",
+                "college": "Test College",
+                "branch": "CSE",
+                "cgpa": 8.2,
+                "skills": "Python, SQL",
+                "linkedin_url": None,
+                "github_url": None,
+                "leetcode_url": None,
+            },
+        )
+        expect_status(registered_student, 201)
+        registered_student_id = registered_student.json()["id"]
+        sign_in = client.post(
+            "/students/sign-in",
+            json={
+                "email": "registered@example.com",
+                "password": "secure-password",
+            },
+        )
+        expect_status(sign_in, 200)
+        assert sign_in.json()["id"] == registered_student_id
+        expect_status(
+            client.post(
+                "/students/sign-in",
+                json={
+                    "email": "registered@example.com",
+                    "password": "wrong-password",
+                },
+            ),
+            401,
+        )
+
         pdf = fitz.open()
         page = pdf.new_page()
         page.insert_text(
@@ -71,6 +108,25 @@ def run() -> None:
         student_id = student_body["student_id"]
         assert student_body["target_role"] == "AI/ML Intern"
         assert student_body["resume_score"] > 0
+
+        activated_student = client.post(
+            "/students/register",
+            json={
+                "name": "Smoke Test Student",
+                "email": "smoke-test@example.com",
+                "password": "activated-password",
+                "college": "Test College",
+                "branch": "CSE",
+                "cgpa": 9.0,
+                "skills": "Python, SQL, Excel, Statistics",
+                "linkedin_url": "https://linkedin.com/in/smoke-test",
+                "github_url": "https://github.com/smoke-test",
+                "leetcode_url": None,
+            },
+        )
+        expect_status(activated_student, 201)
+        assert activated_student.json()["id"] == student_id
+        assert activated_student.json()["resume_score"] > 0
 
         role_update = client.patch(
             f"/students/{student_id}/target-role",
@@ -180,6 +236,23 @@ def run() -> None:
         expect_status(client.get(f"/students/{student_id}"), 200)
         expect_status(client.get(f"/jobs/{job_id}"), 200)
         expect_status(client.get(f"/applications/job/{job_id}"), 200)
+
+        college_options = client.get("/college/options")
+        expect_status(college_options, 200)
+        test_college = next(
+            option
+            for option in college_options.json()
+            if option["name"] == "Test College"
+        )
+        assert test_college["student_count"] == 3
+
+        college_insights = client.get(
+            "/college/insights",
+            params={"college": "Test College", "limit": 3},
+        )
+        expect_status(college_insights, 200)
+        assert college_insights.json()["selected_students"] == 3
+        assert college_insights.json()["applied_students"] == 2
 
     print("Backend smoke test passed.")
 

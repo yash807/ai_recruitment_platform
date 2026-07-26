@@ -403,7 +403,7 @@ export default function RecruiterPage() {
       <div className="pointer-events-none absolute -right-32 top-96 h-96 w-96 rounded-full bg-indigo-100/70 blur-3xl" />
 
       <div className="relative mx-auto max-w-6xl">
-        {/* Navigation between the student and recruiter prototypes. */}
+        {/* Company workspace navigation. */}
         <nav className="glass-card mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-sm font-black text-white shadow-lg shadow-blue-200">
@@ -411,7 +411,7 @@ export default function RecruiterPage() {
             </span>
             <div>
               <p className="text-sm font-bold leading-none">AI Talent</p>
-              <p className="mt-1 text-xs text-slate-500">Recruiter workspace</p>
+              <p className="mt-1 text-xs text-slate-500">Company workspace</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -419,7 +419,7 @@ export default function RecruiterPage() {
               className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-950"
               href="/"
             >
-              Student page
+              All portals
             </Link>
             <span
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${
@@ -438,10 +438,10 @@ export default function RecruiterPage() {
           </div>
         </nav>
 
-        {/* Recruiter introduction. */}
+        {/* Company introduction. */}
         <header className="fade-up mb-8 rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-11">
           <p className="mb-4 inline-flex rounded-full border border-blue-300/20 bg-blue-400/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-200">
-            Recruiter hiring workspace
+            Company hiring workspace
           </p>
           <h1 className="max-w-3xl text-3xl font-black tracking-tight sm:text-5xl">
             Turn job requirements into an{" "}

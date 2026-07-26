@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import re
+import secrets
 from pathlib import Path
 from uuid import uuid4
 
@@ -54,6 +57,24 @@ class StudentCreate(BaseModel):
         if expected_domain not in normalized.lower():
             raise ValueError(f"Enter a valid {expected_domain} profile URL.")
         return normalized
+
+
+class StudentRegistration(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    college: str = Field(min_length=2, max_length=200)
+    branch: str = Field(min_length=2, max_length=100)
+    cgpa: float = Field(ge=0, le=10)
+    skills: str | None = Field(default=None, max_length=1000)
+    linkedin_url: str | None = Field(default=None, max_length=500)
+    github_url: str | None = Field(default=None, max_length=500)
+    leetcode_url: str | None = Field(default=None, max_length=500)
+
+
+class StudentSignIn(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
 
 
 # Safe student fields returned from the backend to the frontend.
@@ -129,6 +150,34 @@ class ProfileLinksUpdate(BaseModel):
                 f"Enter a valid {expected_domains[info.field_name]} profile URL."
             )
         return normalized
+
+
+def hash_password(password: str) -> str:
+    """Create a salted password hash for prototype student sign-in."""
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        210_000,
+    ).hex()
+    return f"{salt}${digest}"
+
+
+def verify_password(password: str, stored_hash: str | None) -> bool:
+    if not stored_hash or "$" not in stored_hash:
+        return False
+    salt, expected_digest = stored_hash.split("$", 1)
+    try:
+        calculated_digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt),
+            210_000,
+        ).hex()
+    except ValueError:
+        return False
+    return hmac.compare_digest(calculated_digest, expected_digest)
 
 
 # Calculates general ATS readiness without using a particular job role.
@@ -478,6 +527,102 @@ async def create_student(
 
     result.message = "Student profile created and resume analyzed successfully."
     return result
+
+
+@router.post(
+    "/register",
+    response_model=StudentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def register_student(
+    registration: StudentRegistration,
+    db: Session = Depends(get_db),
+):
+    """Create a student account before resume analysis."""
+    normalized_email = registration.email.strip().lower()
+    existing_student = (
+        db.query(Student).filter(Student.email == normalized_email).first()
+    )
+    if existing_student:
+        if existing_student.password_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A student account with this email already exists.",
+            )
+        # Profiles created before sign-in was introduced can be activated from
+        # the new Create profile screen without losing resume or interview data.
+        existing_student.password_hash = hash_password(registration.password)
+        existing_student.name = registration.name.strip()
+        existing_student.college = registration.college.strip()
+        existing_student.branch = registration.branch.strip()
+        existing_student.cgpa = registration.cgpa
+        existing_student.skills = (
+            registration.skills.strip() if registration.skills else None
+        )
+        existing_student.linkedin_url = (
+            registration.linkedin_url.strip()
+            if registration.linkedin_url
+            else existing_student.linkedin_url
+        )
+        existing_student.github_url = (
+            registration.github_url.strip()
+            if registration.github_url
+            else existing_student.github_url
+        )
+        existing_student.leetcode_url = (
+            registration.leetcode_url.strip()
+            if registration.leetcode_url
+            else existing_student.leetcode_url
+        )
+        db.commit()
+        db.refresh(existing_student)
+        return existing_student
+
+    new_student = Student(
+        name=registration.name.strip(),
+        email=normalized_email,
+        password_hash=hash_password(registration.password),
+        college=registration.college.strip(),
+        branch=registration.branch.strip(),
+        cgpa=registration.cgpa,
+        skills=registration.skills.strip() if registration.skills else None,
+        linkedin_url=(
+            registration.linkedin_url.strip()
+            if registration.linkedin_url
+            else None
+        ),
+        github_url=(
+            registration.github_url.strip() if registration.github_url else None
+        ),
+        leetcode_url=(
+            registration.leetcode_url.strip()
+            if registration.leetcode_url
+            else None
+        ),
+    )
+    db.add(new_student)
+    db.commit()
+    db.refresh(new_student)
+    return new_student
+
+
+@router.post("/sign-in", response_model=StudentResponse)
+def sign_in_student(
+    credentials: StudentSignIn,
+    db: Session = Depends(get_db),
+):
+    """Verify a student email and password for the prototype dashboard."""
+    normalized_email = credentials.email.strip().lower()
+    student = db.query(Student).filter(Student.email == normalized_email).first()
+    if not student or not verify_password(
+        credentials.password,
+        student.password_hash,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
+        )
+    return student
 
 
 # Return the supported role list for frontend forms.
