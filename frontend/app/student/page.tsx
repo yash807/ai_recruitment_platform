@@ -19,12 +19,77 @@ const emptyRegistration = {
   leetcode_url: "",
 };
 
+type RegistrationField = keyof typeof emptyRegistration;
+type ProfileField = "linkedin_url" | "github_url" | "leetcode_url";
+
+const profileFields: ProfileField[] = [
+  "linkedin_url",
+  "github_url",
+  "leetcode_url",
+];
+
+const profileDomains: Record<ProfileField, string> = {
+  linkedin_url: "linkedin.com",
+  github_url: "github.com",
+  leetcode_url: "leetcode.com",
+};
+
+function isValidEmail(value: string) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim());
+}
+
+function isValidProfileUrl(field: ProfileField, value: string) {
+  if (!value.trim()) return field !== "linkedin_url";
+
+  try {
+    const normalized = value.trim().startsWith("http")
+      ? value.trim()
+      : `https://${value.trim()}`;
+    const url = new URL(normalized);
+    const hostname = url.hostname.toLowerCase();
+    const expectedDomain = profileDomains[field];
+    const validDomain =
+      hostname === expectedDomain || hostname.endsWith(`.${expectedDomain}`);
+    const segments = url.pathname.split("/").filter(Boolean);
+
+    if (!validDomain || !["http:", "https:"].includes(url.protocol)) {
+      return false;
+    }
+    if (field === "linkedin_url") {
+      return segments.length >= 2 && segments[0].toLowerCase() === "in";
+    }
+    if (field === "github_url") {
+      return segments.length === 1;
+    }
+
+    const reservedLeetCodePaths = new Set([
+      "assessment",
+      "contest",
+      "discuss",
+      "explore",
+      "problemset",
+      "problems",
+      "store",
+    ]);
+    return (
+      (segments.length >= 2 && segments[0].toLowerCase() === "u") ||
+      (segments.length === 1 &&
+        !reservedLeetCodePaths.has(segments[0].toLowerCase()))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function StudentAccessPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [signIn, setSignIn] = useState({ email: "", password: "" });
   const [registration, setRegistration] = useState(emptyRegistration);
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<RegistrationField, string>>
+  >({});
   const [submitting, setSubmitting] = useState(false);
 
   function openDashboard(student: { id: number; name: string }) {
@@ -57,8 +122,38 @@ export default function StudentAccessPage() {
 
   async function handleRegistration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
     setMessage("");
+    setFieldErrors({});
+
+    if (!isValidEmail(registration.email)) {
+      setMessage("Please enter a valid email address.");
+      return;
+    }
+
+    const invalidProfileLinks = profileFields.filter(
+      (field) => !isValidProfileUrl(field, registration[field]),
+    );
+    if (invalidProfileLinks.length > 0) {
+      setFieldErrors(
+        Object.fromEntries(
+          invalidProfileLinks.map((field) => [
+            field,
+            field === "linkedin_url" && !registration[field].trim()
+              ? "LinkedIn profile is required."
+              : "Please enter a valid URL",
+          ]),
+        ),
+      );
+      setMessage(
+        invalidProfileLinks.includes("linkedin_url") &&
+          !registration.linkedin_url.trim()
+          ? "LinkedIn profile is required."
+          : "Please enter a valid URL",
+      );
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const response = await fetch(`${API_URL}/students/register`, {
         method: "POST",
@@ -67,7 +162,7 @@ export default function StudentAccessPage() {
           ...registration,
           cgpa: Number(registration.cgpa),
           skills: registration.skills || null,
-          linkedin_url: registration.linkedin_url || null,
+          linkedin_url: registration.linkedin_url,
           github_url: registration.github_url || null,
           leetcode_url: registration.leetcode_url || null,
         }),
@@ -77,7 +172,11 @@ export default function StudentAccessPage() {
         const detail = Array.isArray(result.detail)
           ? result.detail[0]?.msg
           : result.detail;
-        throw new Error(detail || "Could not create the profile.");
+        throw new Error(
+          typeof detail === "string"
+            ? detail.replace(/^Value error,\s*/i, "")
+            : "Could not create the profile.",
+        );
       }
       openDashboard(result);
     } catch (error) {
@@ -153,6 +252,7 @@ export default function StudentAccessPage() {
                   onClick={() => {
                     setMode(value as "sign-in" | "sign-up");
                     setMessage("");
+                    setFieldErrors({});
                   }}
                   type="button"
                 >
@@ -225,7 +325,7 @@ export default function StudentAccessPage() {
                     ["branch", "Branch", "text", true],
                     ["cgpa", "CGPA", "number", true],
                     ["skills", "Skills", "text", false],
-                    ["linkedin_url", "LinkedIn URL", "url", false],
+                    ["linkedin_url", "LinkedIn URL", "text", true],
                     ["github_url", "GitHub URL", "url", false],
                     ["leetcode_url", "LeetCode URL", "url", false],
                   ].map(([key, label, type, required]) => (
@@ -246,24 +346,53 @@ export default function StudentAccessPage() {
                       </span>
                       <input
                         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                        inputMode={
+                          profileFields.includes(key as ProfileField)
+                            ? "url"
+                            : undefined
+                        }
                         max={key === "cgpa" ? 10 : undefined}
                         min={key === "cgpa" ? 0 : undefined}
                         minLength={key === "password" ? 8 : undefined}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setRegistration((current) => ({
                             ...current,
                             [String(key)]: event.target.value,
-                          }))
+                          }));
+                          setFieldErrors((current) => ({
+                            ...current,
+                            [String(key)]: undefined,
+                          }));
+                        }}
+                        placeholder={
+                          key === "email"
+                            ? "you@gmail.com"
+                            : key === "linkedin_url"
+                              ? "https://www.linkedin.com/in/username"
+                              : key === "github_url"
+                                ? "https://github.com/username"
+                                : key === "leetcode_url"
+                                  ? "https://leetcode.com/u/username"
+                                  : undefined
                         }
                         required={Boolean(required)}
                         step={key === "cgpa" ? "0.01" : undefined}
-                        type={String(type)}
+                        type={
+                          profileFields.includes(key as ProfileField)
+                            ? "text"
+                            : String(type)
+                        }
                         value={
                           registration[
                             String(key) as keyof typeof registration
                           ]
                         }
                       />
+                      {fieldErrors[key as RegistrationField] && (
+                        <span className="mt-1 block text-xs font-medium text-rose-600">
+                          {fieldErrors[key as RegistrationField]}
+                        </span>
+                      )}
                     </label>
                   ))}
                 </div>

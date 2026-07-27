@@ -3,6 +3,7 @@ import hmac
 import re
 import secrets
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import fitz
@@ -22,6 +23,86 @@ RESUME_UPLOAD_DIR = PROJECT_ROOT / "uploads" / "resumes"
 MAX_RESUME_SIZE = 5 * 1024 * 1024
 
 
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PROFILE_DOMAINS = {
+    "linkedin_url": "linkedin.com",
+    "github_url": "github.com",
+    "leetcode_url": "leetcode.com",
+}
+
+
+def validate_email_value(value: str) -> str:
+    """Validate the address format without claiming mailbox ownership."""
+    normalized = value.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(normalized):
+        raise ValueError("Please enter a valid email address.")
+    return normalized
+
+
+def validate_profile_url_value(
+    value: str | None,
+    field_name: str,
+    *,
+    required: bool = False,
+) -> str | None:
+    """Accept only a real profile path on the expected professional domain."""
+    if not value or not value.strip():
+        if required:
+            raise ValueError("LinkedIn profile is required.")
+        return None
+
+    normalized = value.strip()
+    if not normalized.startswith(("http://", "https://")):
+        normalized = f"https://{normalized}"
+
+    try:
+        parsed = urlparse(normalized)
+        hostname = (parsed.hostname or "").lower()
+        expected_domain = PROFILE_DOMAINS[field_name]
+        valid_domain = (
+            hostname == expected_domain
+            or hostname.endswith(f".{expected_domain}")
+        )
+        segments = [segment for segment in parsed.path.split("/") if segment]
+    except ValueError as error:
+        raise ValueError("Please enter a valid URL.") from error
+
+    if parsed.scheme not in {"http", "https"} or not valid_domain:
+        raise ValueError("Please enter a valid URL.")
+
+    if field_name == "linkedin_url":
+        valid_profile_path = (
+            len(segments) >= 2
+            and segments[0].lower() == "in"
+            and bool(segments[1])
+        )
+    elif field_name == "github_url":
+        # A GitHub profile URL is github.com/<username>, not a repository URL.
+        valid_profile_path = len(segments) == 1 and bool(segments[0])
+    else:
+        reserved_leetcode_paths = {
+            "assessment",
+            "contest",
+            "discuss",
+            "explore",
+            "problemset",
+            "problems",
+            "store",
+        }
+        valid_profile_path = (
+            len(segments) >= 2
+            and segments[0].lower() == "u"
+            and bool(segments[1])
+        ) or (
+            len(segments) == 1
+            and segments[0].lower() not in reserved_leetcode_paths
+        )
+
+    if not valid_profile_path:
+        raise ValueError("Please enter a valid URL.")
+    return normalized
+
+
 # Data required when the frontend creates a student profile.
 class StudentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100)
@@ -35,27 +116,19 @@ class StudentCreate(BaseModel):
     github_url: str | None = Field(default=None, max_length=500)
     leetcode_url: str | None = Field(default=None, max_length=500)
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str):
+        return validate_email_value(value)
+
     @field_validator("linkedin_url", "github_url", "leetcode_url")
     @classmethod
     def validate_profile_url(cls, value: str | None, info):
-        if not value or not value.strip():
-            if info.field_name == "linkedin_url":
-                raise ValueError("LinkedIn profile is required.")
-            return None
-
-        normalized = value.strip()
-        if not normalized.startswith(("http://", "https://")):
-            normalized = f"https://{normalized}"
-
-        expected_domains = {
-            "linkedin_url": "linkedin.com",
-            "github_url": "github.com",
-            "leetcode_url": "leetcode.com",
-        }
-        expected_domain = expected_domains[info.field_name]
-        if expected_domain not in normalized.lower():
-            raise ValueError(f"Enter a valid {expected_domain} profile URL.")
-        return normalized
+        return validate_profile_url_value(
+            value,
+            info.field_name,
+            required=info.field_name == "linkedin_url",
+        )
 
 
 class StudentRegistration(BaseModel):
@@ -66,14 +139,33 @@ class StudentRegistration(BaseModel):
     branch: str = Field(min_length=2, max_length=100)
     cgpa: float = Field(ge=0, le=10)
     skills: str | None = Field(default=None, max_length=1000)
-    linkedin_url: str | None = Field(default=None, max_length=500)
+    linkedin_url: str = Field(min_length=5, max_length=500)
     github_url: str | None = Field(default=None, max_length=500)
     leetcode_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str):
+        return validate_email_value(value)
+
+    @field_validator("linkedin_url", "github_url", "leetcode_url")
+    @classmethod
+    def validate_profile_url(cls, value: str | None, info):
+        return validate_profile_url_value(
+            value,
+            info.field_name,
+            required=info.field_name == "linkedin_url",
+        )
 
 
 class StudentSignIn(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str):
+        return validate_email_value(value)
 
 
 # Safe student fields returned from the backend to the frontend.
@@ -130,23 +222,11 @@ class ProfileLinksUpdate(BaseModel):
     @field_validator("linkedin_url", "github_url", "leetcode_url")
     @classmethod
     def validate_profile_url(cls, value: str | None, info):
-        if not value or not value.strip():
-            if info.field_name == "linkedin_url":
-                raise ValueError("LinkedIn profile is required.")
-            return None
-        normalized = value.strip()
-        if not normalized.startswith(("http://", "https://")):
-            normalized = f"https://{normalized}"
-        expected_domains = {
-            "linkedin_url": "linkedin.com",
-            "github_url": "github.com",
-            "leetcode_url": "leetcode.com",
-        }
-        if expected_domains[info.field_name] not in normalized.lower():
-            raise ValueError(
-                f"Enter a valid {expected_domains[info.field_name]} profile URL."
-            )
-        return normalized
+        return validate_profile_url_value(
+            value,
+            info.field_name,
+            required=info.field_name == "linkedin_url",
+        )
 
 
 def hash_password(password: str) -> str:

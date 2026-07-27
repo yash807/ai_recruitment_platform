@@ -72,6 +72,63 @@ def run() -> None:
         expect_status(health, 200)
         assert health.json() == {"status": "ok", "database": "ok"}
 
+        invalid_profile_link = client.post(
+            "/students/register",
+            json={
+                "name": "Invalid Link Student",
+                "email": "invalid-link@gmail.com",
+                "password": "secure-password",
+                "college": "Test College",
+                "branch": "CSE",
+                "cgpa": 8.2,
+                "skills": "Python, SQL",
+                "linkedin_url": "https://fake.example/linkedin.com/in/student",
+                "github_url": None,
+                "leetcode_url": None,
+            },
+        )
+        expect_status(invalid_profile_link, 422)
+        assert "Please enter a valid URL." in invalid_profile_link.text
+
+        for field_name, invalid_url in (
+            ("github_url", "https://example.com/github.com/student"),
+            ("leetcode_url", "https://leetcode.com/problems/two-sum"),
+        ):
+            invalid_optional_profile = client.post(
+                "/students/register",
+                json={
+                    "name": f"Invalid {field_name} Student",
+                    "email": f"invalid-{field_name}@gmail.com",
+                    "password": "secure-password",
+                    "college": "Test College",
+                    "branch": "CSE",
+                    "cgpa": 8.2,
+                    "skills": "Python, SQL",
+                    "linkedin_url": (
+                        f"https://linkedin.com/in/invalid-{field_name}"
+                    ),
+                    field_name: invalid_url,
+                },
+            )
+            expect_status(invalid_optional_profile, 422)
+            assert "Please enter a valid URL." in invalid_optional_profile.text
+
+        missing_linkedin = client.post(
+            "/students/register",
+            json={
+                "name": "Missing LinkedIn Student",
+                "email": "missing-linkedin@gmail.com",
+                "password": "secure-password",
+                "college": "Test College",
+                "branch": "CSE",
+                "cgpa": 8.2,
+                "skills": "Python, SQL",
+                "github_url": None,
+                "leetcode_url": None,
+            },
+        )
+        expect_status(missing_linkedin, 422)
+
         registered_student = client.post(
             "/students/register",
             json={
@@ -82,7 +139,7 @@ def run() -> None:
                 "branch": "CSE",
                 "cgpa": 8.2,
                 "skills": "Python, SQL",
-                "linkedin_url": None,
+                "linkedin_url": "https://linkedin.com/in/registered-student",
                 "github_url": None,
                 "leetcode_url": None,
             },
