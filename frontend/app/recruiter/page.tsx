@@ -8,7 +8,7 @@ const API_URL = "/api";
 
 const TARGET_ROLES = [
   "AI/ML Intern",
-  "Data Analys",
+  "Data Analyst",
   "Frontend Developer",
   "Backend Developer",
   "Full-Stack Developer",
