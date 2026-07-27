@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models import Application, Student
+from ..models import applications, students
 
 
 router = APIRouter(prefix="/college", tags=["College"])
@@ -39,16 +37,13 @@ class CollegeInsightsResponse(BaseModel):
 
 
 @router.get("/options", response_model=list[CollegeOption])
-def get_college_options(db: Session = Depends(get_db)):
+def get_college_options():
     """Return colleges already represented by student profiles."""
-    students = (
-        db.query(Student)
-        .filter(Student.college.is_not(None))
-        .order_by(Student.college.asc())
-        .all()
+    all_students = students.list(
+        {"college": {"$ne": None}}, sort=[("college", 1)]
     )
     counts: dict[str, int] = {}
-    for student in students:
+    for student in all_students:
         college_name = (student.college or "").strip()
         if college_name:
             counts[college_name] = counts.get(college_name, 0) + 1
@@ -62,32 +57,23 @@ def get_college_options(db: Session = Depends(get_db)):
 def get_college_insights(
     college: str,
     limit: int = Query(default=50, ge=1, le=500),
-    db: Session = Depends(get_db),
 ):
     """Summarize placement outcomes for a selected college cohort."""
-    students = (
-        db.query(Student)
-        .filter(Student.college == college)
-        .order_by(Student.id.desc())
-        .limit(limit)
-        .all()
+    cohort = students.list(
+        {"college": college}, sort=[("id", -1)], limit=limit
     )
-    if not students:
+    if not cohort:
         raise HTTPException(
             status_code=404,
             detail="No student profiles were found for this college.",
         )
 
-    student_ids = [student.id for student in students]
-    applications = (
-        db.query(Application)
-        .filter(Application.student_id.in_(student_ids))
-        .all()
-    )
-    applications_by_student: dict[int, list[Application]] = {
+    student_ids = [student.id for student in cohort]
+    all_applications = applications.list_by_students(student_ids)
+    applications_by_student: dict[int, list] = {
         student_id: [] for student_id in student_ids
     }
-    for application in applications:
+    for application in all_applications:
         applications_by_student.setdefault(application.student_id, []).append(
             application
         )
@@ -100,7 +86,7 @@ def get_college_insights(
     student_insights: list[CollegeStudentInsight] = []
     rejected_statuses = {"Rejected", "Not Eligible for AI Interview"}
 
-    for student in students:
+    for student in cohort:
         records = applications_by_student.get(student.id, [])
         statuses = {record.status for record in records}
         if records:
@@ -134,17 +120,17 @@ def get_college_insights(
         )
 
     average_resume_score = round(
-        sum(student.resume_score or 0 for student in students) / len(students),
+        sum(student.resume_score or 0 for student in cohort) / len(cohort),
         1,
     )
     return CollegeInsightsResponse(
         college=college,
-        selected_students=len(students),
+        selected_students=len(cohort),
         applied_students=applied_students,
         hired_students=hired_students,
         rejected_students=rejected_students,
         students_in_process=students_in_process,
-        students_not_applied=len(students) - applied_students,
+        students_not_applied=len(cohort) - applied_students,
         interviews_completed=interviews_completed,
         average_resume_score=average_resume_score,
         students=student_insights,

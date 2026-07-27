@@ -1,6 +1,17 @@
-"""Run the core API workflow against a temporary SQLite database."""
+"""Run the core API workflow against a real, disposable MongoDB database.
+
+Set MONGODB_URI (e.g. in backend/.env) before running this file directly:
+
+    cd backend
+    python tests/smoke_test.py
+
+The test rewrites the URI to point at a throwaway database name
+("..._smoke_test") so it never touches your real data, and drops that
+database again at the end.
+"""
 
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -10,13 +21,37 @@ import fitz
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
+from dotenv import load_dotenv
+
+load_dotenv(BACKEND_ROOT / ".env")
+
+base_uri = os.environ.get("MONGODB_URI")
+if not base_uri:
+    raise SystemExit(
+        "MONGODB_URI is not set. Add it to backend/.env or export it before "
+        "running the smoke test."
+    )
+
+TEST_DB_NAME = "ai_recruitment_platform_smoke_test"
+
+
+def _use_test_database(uri: str, db_name: str) -> str:
+    """Return the same URI, but pointed at a disposable database name."""
+    match = re.match(r"^(mongodb(?:\+srv)?://[^/]+)(/[^?]*)?(\?.*)?$", uri)
+    if not match:
+        raise ValueError(f"Could not parse MONGODB_URI: {uri!r}")
+    host_part, _existing_path, query = match.groups()
+    return f"{host_part}/{db_name}{query or ''}"
+
+
+os.environ["MONGODB_URI"] = _use_test_database(base_uri, TEST_DB_NAME)
+
 temporary_directory = tempfile.TemporaryDirectory()
-database_path = Path(temporary_directory.name) / "smoke-test.db"
-os.environ["DATABASE_URL"] = f"sqlite:///{database_path}"
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.mongo import client as mongo_client, mongo_db
 from app.routes import students as student_routes
 
 student_routes.RESUME_UPLOAD_DIR = Path(temporary_directory.name) / "resumes"
@@ -258,4 +293,8 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    finally:
+        # Always clean up the disposable test database, pass or fail.
+        mongo_client.drop_database(mongo_db.name)

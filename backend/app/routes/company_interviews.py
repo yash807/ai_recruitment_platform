@@ -3,10 +3,9 @@ import re
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from pymongo.errors import PyMongoError
 
 from ..ai_interview_service import (
     AIAnalysisError,
@@ -14,8 +13,7 @@ from ..ai_interview_service import (
     evaluate_transcripts,
     transcribe_recordings,
 )
-from ..database import get_db
-from ..models import Application, CompanyInterview, Job, Student
+from ..models import Doc, applications, company_interviews, jobs, students
 from ..role_profiles import get_role_profile
 from .applications import split_requirements
 
@@ -68,7 +66,7 @@ class RecruiterInterviewResult(BaseModel):
     evaluation: InterviewEvaluation
 
 
-def generate_company_questions(student: Student, job: Job) -> list[str]:
+def generate_company_questions(student: Doc, job: Doc) -> list[str]:
     """Create five questions from the JD, required skills, and resume context."""
     required_skills = split_requirements(job.required_skills)
     primary_skill = required_skills[0] if required_skills else "the main required skill"
@@ -103,28 +101,19 @@ def generate_company_questions(student: Student, job: Job) -> list[str]:
         ),
         role_questions[0],
         (
-            f"The job description includes this responsibility: “{responsibility}”. "
+            f"The job description includes this responsibility: \u201c{responsibility}\u201d. "
             f"{role_questions[1]}"
         ),
     ]
 
 
-def get_interview_context(
-    interview: CompanyInterview,
-    db: Session,
-) -> tuple[Application, Student, Job]:
-    application = (
-        db.query(Application)
-        .filter(Application.id == interview.application_id)
-        .first()
-    )
+def get_interview_context(interview: Doc) -> tuple[Doc, Doc, Doc]:
+    application = applications.get(interview.application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    student = (
-        db.query(Student).filter(Student.id == application.student_id).first()
-    )
-    job = db.query(Job).filter(Job.id == application.job_id).first()
+    student = students.get(application.student_id)
+    job = jobs.get(application.job_id)
     if not student or not job:
         raise HTTPException(
             status_code=404,
@@ -133,10 +122,7 @@ def get_interview_context(
     return application, student, job
 
 
-def serialize_interview(
-    interview: CompanyInterview,
-    job: Job,
-) -> CompanyInterviewResponse:
+def serialize_interview(interview: Doc, job: Doc) -> CompanyInterviewResponse:
     video_paths = json.loads(interview.video_paths or "{}")
     return CompanyInterviewResponse(
         id=interview.id,
@@ -154,16 +140,9 @@ def serialize_interview(
     "/start/{application_id}",
     response_model=CompanyInterviewResponse,
 )
-def start_company_interview(
-    application_id: int,
-    db: Session = Depends(get_db),
-):
+def start_company_interview(application_id: int):
     """Start or resume the company interview for an eligible application."""
-    application = (
-        db.query(Application)
-        .filter(Application.id == application_id)
-        .first()
-    )
+    application = applications.get(application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found.")
     if not application.eligible:
@@ -172,38 +151,31 @@ def start_company_interview(
             detail="This application is not eligible for the company AI interview.",
         )
 
-    student = (
-        db.query(Student).filter(Student.id == application.student_id).first()
-    )
-    job = db.query(Job).filter(Job.id == application.job_id).first()
+    student = students.get(application.student_id)
+    job = jobs.get(application.job_id)
     if not student or not job:
         raise HTTPException(
             status_code=404,
             detail="Student or job record could not be found.",
         )
 
-    existing = (
-        db.query(CompanyInterview)
-        .filter(CompanyInterview.application_id == application.id)
-        .order_by(CompanyInterview.id.desc())
-        .first()
-    )
+    existing = company_interviews.latest_for_application(application.id)
     if existing:
         return serialize_interview(existing, job)
 
-    interview = CompanyInterview(
-        application_id=application.id,
-        questions=json.dumps(generate_company_questions(student, job)),
-        video_paths="{}",
-        transcripts="[]",
-        status="In Progress",
-        analysis_status="Not Started",
-        overall_score=0,
+    interview = company_interviews.create(
+        {
+            "application_id": application.id,
+            "questions": json.dumps(generate_company_questions(student, job)),
+            "video_paths": "{}",
+            "transcripts": "[]",
+            "status": "In Progress",
+            "analysis_status": "Not Started",
+            "overall_score": 0,
+        }
     )
     application.status = "Company AI Interview In Progress"
-    db.add(interview)
-    db.commit()
-    db.refresh(interview)
+    applications.save(application)
     return serialize_interview(interview, job)
 
 
@@ -211,18 +183,11 @@ def start_company_interview(
     "/{interview_id}",
     response_model=CompanyInterviewResponse,
 )
-def get_company_interview(
-    interview_id: int,
-    db: Session = Depends(get_db),
-):
-    interview = (
-        db.query(CompanyInterview)
-        .filter(CompanyInterview.id == interview_id)
-        .first()
-    )
+def get_company_interview(interview_id: int):
+    interview = company_interviews.get(interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Company interview not found.")
-    _, _, job = get_interview_context(interview, db)
+    _, _, job = get_interview_context(interview)
     return serialize_interview(interview, job)
 
 
@@ -234,13 +199,8 @@ async def upload_company_video_answer(
     interview_id: int,
     question_index: int,
     video: UploadFile = File(...),
-    db: Session = Depends(get_db),
 ):
-    interview = (
-        db.query(CompanyInterview)
-        .filter(CompanyInterview.id == interview_id)
-        .first()
-    )
+    interview = company_interviews.get(interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Company interview not found.")
     if interview.analysis_status == "Completed":
@@ -289,8 +249,7 @@ async def upload_company_video_answer(
         if len(video_paths) == len(questions)
         else "In Progress"
     )
-    db.commit()
-    db.refresh(interview)
+    company_interviews.save(interview)
 
     if previous_path and previous_path != stored_path:
         previous_path.unlink(missing_ok=True)
@@ -308,20 +267,13 @@ async def upload_company_video_answer(
     "/{interview_id}/submit",
     response_model=CompanyInterviewSubmissionResponse,
 )
-def submit_company_interview(
-    interview_id: int,
-    db: Session = Depends(get_db),
-):
+def submit_company_interview(interview_id: int):
     """Transcribe, evaluate, and save the private company-interview result."""
-    interview = (
-        db.query(CompanyInterview)
-        .filter(CompanyInterview.id == interview_id)
-        .first()
-    )
+    interview = company_interviews.get(interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Company interview not found.")
 
-    application, student, job = get_interview_context(interview, db)
+    application, student, job = get_interview_context(interview)
     questions = json.loads(interview.questions)
     video_paths = json.loads(interview.video_paths or "{}")
     if len(video_paths) != len(questions):
@@ -348,7 +300,7 @@ def submit_company_interview(
     try:
         interview.analysis_status = "Processing"
         interview.analysis_error = None
-        db.commit()
+        company_interviews.save(interview)
 
         transcripts = transcribe_recordings(
             video_paths=video_paths,
@@ -367,33 +319,29 @@ def submit_company_interview(
         interview.overall_score = evaluation.overall_score
         interview.status = "Submitted"
         interview.analysis_status = "Completed"
+        company_interviews.save(interview)
+
         application.company_interview_score = evaluation.overall_score
         application.status = "Company AI Interview Submitted"
         application.recommendation = "Awaiting recruiter review."
-        db.commit()
+        applications.save(application)
     except AIAnalysisError as error:
-        db.rollback()
         interview.analysis_status = "Failed"
         interview.analysis_error = str(error)
         try:
-            db.commit()
-        except SQLAlchemyError:
-            db.rollback()
+            company_interviews.save(interview)
+        except PyMongoError:
+            pass
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),
         ) from error
-    except SQLAlchemyError as error:
-        db.rollback()
+    except PyMongoError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "The interview database is busy. Close DB Browser for SQLite "
-                "and retry the submission."
-            ),
+            detail="The interview database is unreachable. Check MONGODB_URI and retry.",
         ) from error
     except Exception as error:
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
@@ -414,16 +362,9 @@ def submit_company_interview(
     "/{interview_id}/recruiter-result",
     response_model=RecruiterInterviewResult,
 )
-def get_recruiter_interview_result(
-    interview_id: int,
-    db: Session = Depends(get_db),
-):
+def get_recruiter_interview_result(interview_id: int):
     """Return the detailed private result for the Day 7 recruiter dashboard."""
-    interview = (
-        db.query(CompanyInterview)
-        .filter(CompanyInterview.id == interview_id)
-        .first()
-    )
+    interview = company_interviews.get(interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Company interview not found.")
     if interview.analysis_status != "Completed" or not interview.ai_evaluation:

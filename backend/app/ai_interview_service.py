@@ -11,7 +11,7 @@ MODEL_CACHE = BACKEND_ROOT / ".cache" / "huggingface"
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from .models import Student
+from .models import Doc
 from .role_profiles import get_role_profile
 
 load_dotenv(BACKEND_ROOT / ".env")
@@ -162,7 +162,7 @@ def communication_score(word_count: int) -> int:
     return 90
 
 
-def build_role_keywords(student: Student, target_role: str | None = None) -> set[str]:
+def build_role_keywords(student: Doc, target_role: str | None = None) -> set[str]:
     profile = get_role_profile(target_role or student.target_role or "")
     if not profile:
         return set()
@@ -267,7 +267,7 @@ def average(values: list[int]) -> int:
 
 
 def evaluate_transcripts(
-    student: Student,
+    student: Doc,
     questions: list[str],
     transcripts: list[str],
     *,

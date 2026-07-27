@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field, field_validator
 
-from ..database import get_db
-from ..models import Job
+from ..models import jobs
 from ..role_profiles import TARGET_ROLES
 
 
@@ -31,8 +29,6 @@ class JobCreate(BaseModel):
 
 
 class JobResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     company_name: str
     job_title: str
@@ -45,24 +41,21 @@ class JobResponse(BaseModel):
 
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
-def create_job(job: JobCreate, db: Session = Depends(get_db)):
-    """Save a recruiter-created job in SQLite."""
-    new_job = Job(**job.model_dump())
-    db.add(new_job)
-    db.commit()
-    db.refresh(new_job)
+def create_job(job: JobCreate):
+    """Save a recruiter-created job in MongoDB."""
+    new_job = jobs.create(job.model_dump())
     return new_job
 
 
 @router.get("", response_model=list[JobResponse])
-def get_jobs(db: Session = Depends(get_db)):
+def get_jobs():
     """Return every available job, newest first."""
-    return db.query(Job).order_by(Job.id.desc()).all()
+    return jobs.list(sort=[("id", -1)])
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+def get_job(job_id: int):
+    job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     return job

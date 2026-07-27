@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from pymongo.errors import PyMongoError
 
 from ..ai_interview_service import (
     AIAnalysisError,
@@ -13,14 +12,13 @@ from ..ai_interview_service import (
     evaluate_transcripts,
     transcribe_recordings,
 )
-from ..database import get_db
-from ..models import MockInterview, Student
+from ..models import Doc, mock_interviews, students
 from ..role_profiles import get_role_profile
 
 
 router = APIRouter(prefix="/mock-interviews", tags=["Mock Interviews"])
 
-# Interview videos are stored on disk; their paths are stored in SQLite.
+# Interview videos are stored on disk; their paths are stored in MongoDB.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INTERVIEW_UPLOAD_DIR = PROJECT_ROOT / "uploads" / "interviews"
 ALLOWED_VIDEO_EXTENSIONS = {".webm", ".mp4", ".mov"}
@@ -56,7 +54,7 @@ class InterviewAnalysisResponse(BaseModel):
 
 
 # Build five questions from the student's skills and selected target role.
-def generate_mock_questions(student: Student) -> list[str]:
+def generate_mock_questions(student: Doc) -> list[str]:
     skills = [
         skill.strip()
         for skill in (student.skills or "").split(",")
@@ -84,8 +82,8 @@ def generate_mock_questions(student: Student) -> list[str]:
     ]
 
 
-# Convert JSON text stored in SQLite back into normal Python lists.
-def serialize_interview(interview: MockInterview) -> MockInterviewResponse:
+# Convert JSON text stored in Mongo back into normal Python lists.
+def serialize_interview(interview: Doc) -> MockInterviewResponse:
     video_paths = json.loads(interview.video_paths or "{}")
     return MockInterviewResponse(
         id=interview.id,
@@ -100,8 +98,8 @@ def serialize_interview(interview: MockInterview) -> MockInterviewResponse:
 
 # Validate the student and create a new mock-interview session.
 @router.post("/start/{student_id}", response_model=MockInterviewResponse)
-def start_mock_interview(student_id: int, db: Session = Depends(get_db)):
-    student = db.query(Student).filter(Student.id == student_id).first()
+def start_mock_interview(student_id: int):
+    student = students.get(student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -118,27 +116,24 @@ def start_mock_interview(student_id: int, db: Session = Depends(get_db)):
             detail="Select a supported target job role before starting the mock interview.",
         )
 
-    interview = MockInterview(
-        student_id=student.id,
-        questions=json.dumps(generate_mock_questions(student)),
-        video_paths="{}",
-        status="In Progress",
-        transcripts="[]",
-        analysis_status="Not Started",
-        overall_score=0,
+    interview = mock_interviews.create(
+        {
+            "student_id": student.id,
+            "questions": json.dumps(generate_mock_questions(student)),
+            "video_paths": "{}",
+            "status": "In Progress",
+            "transcripts": "[]",
+            "analysis_status": "Not Started",
+            "overall_score": 0,
+        }
     )
-    db.add(interview)
-    db.commit()
-    db.refresh(interview)
     return serialize_interview(interview)
 
 
 # Load one existing mock-interview session.
 @router.get("/{interview_id}", response_model=MockInterviewResponse)
-def get_mock_interview(interview_id: int, db: Session = Depends(get_db)):
-    interview = (
-        db.query(MockInterview).filter(MockInterview.id == interview_id).first()
-    )
+def get_mock_interview(interview_id: int):
+    interview = mock_interviews.get(interview_id)
     if not interview:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -156,11 +151,8 @@ async def upload_video_answer(
     interview_id: int,
     question_index: int,
     video: UploadFile = File(...),
-    db: Session = Depends(get_db),
 ):
-    interview = (
-        db.query(MockInterview).filter(MockInterview.id == interview_id).first()
-    )
+    interview = mock_interviews.get(interview_id)
     if not interview:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -204,12 +196,15 @@ async def upload_video_answer(
 
     # Update the JSON mapping: question index -> saved video path.
     video_paths = json.loads(interview.video_paths or "{}")
-    previous_path = Path(video_paths[str(question_index)]) if str(question_index) in video_paths else None
+    previous_path = (
+        Path(video_paths[str(question_index)])
+        if str(question_index) in video_paths
+        else None
+    )
     video_paths[str(question_index)] = str(stored_path)
     interview.video_paths = json.dumps(video_paths)
     interview.status = "Completed" if len(video_paths) == len(questions) else "In Progress"
-    db.commit()
-    db.refresh(interview)
+    mock_interviews.save(interview)
 
     if previous_path and previous_path != stored_path:
         previous_path.unlink(missing_ok=True)
@@ -229,13 +224,8 @@ async def upload_video_answer(
     "/{interview_id}/analyze",
     response_model=InterviewAnalysisResponse,
 )
-def analyze_mock_interview(
-    interview_id: int,
-    db: Session = Depends(get_db),
-):
-    interview = (
-        db.query(MockInterview).filter(MockInterview.id == interview_id).first()
-    )
+def analyze_mock_interview(interview_id: int):
+    interview = mock_interviews.get(interview_id)
     if not interview:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -247,9 +237,7 @@ def analyze_mock_interview(
             detail="Record all five answers before starting AI analysis.",
         )
 
-    student = (
-        db.query(Student).filter(Student.id == interview.student_id).first()
-    )
+    student = students.get(interview.student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -273,7 +261,7 @@ def analyze_mock_interview(
     try:
         interview.analysis_status = "Processing"
         interview.analysis_error = None
-        db.commit()
+        mock_interviews.save(interview)
 
         transcripts = transcribe_recordings(
             video_paths=video_paths,
@@ -289,33 +277,28 @@ def analyze_mock_interview(
         interview.ai_evaluation = evaluation.model_dump_json()
         interview.analysis_status = "Completed"
         interview.overall_score = evaluation.overall_score
+        mock_interviews.save(interview)
+
         student.mock_interview_score = evaluation.overall_score
         student.ai_profile_summary = evaluation.summary
-        db.commit()
-        db.refresh(interview)
+        students.save(student)
     except AIAnalysisError as error:
-        db.rollback()
         interview.analysis_status = "Failed"
         interview.analysis_error = str(error)
         try:
-            db.commit()
-        except SQLAlchemyError:
-            db.rollback()
+            mock_interviews.save(interview)
+        except PyMongoError:
+            pass
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),
         ) from error
-    except SQLAlchemyError as error:
-        db.rollback()
+    except PyMongoError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "The interview database is busy. Close DB Browser for SQLite "
-                "and retry the analysis."
-            ),
+            detail="The interview database is unreachable. Check MONGODB_URI and retry.",
         ) from error
     except Exception as error:
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
@@ -337,13 +320,8 @@ def analyze_mock_interview(
     "/{interview_id}/analysis",
     response_model=InterviewAnalysisResponse,
 )
-def get_mock_interview_analysis(
-    interview_id: int,
-    db: Session = Depends(get_db),
-):
-    interview = (
-        db.query(MockInterview).filter(MockInterview.id == interview_id).first()
-    )
+def get_mock_interview_analysis(interview_id: int):
+    interview = mock_interviews.get(interview_id)
     if not interview:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -2,13 +2,11 @@ import json
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from pymongo.errors import DuplicateKeyError
 
-from ..database import get_db
-from ..models import Application, CompanyInterview, Job, Student
+from ..models import Doc, DuplicateRecordError, applications, company_interviews, jobs, students
 
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
@@ -134,8 +132,8 @@ def branch_is_allowed(student_branch: str | None, allowed_text: str | None) -> b
 
 
 def calculate_job_match(
-    student: Student,
-    job: Job,
+    student: Doc,
+    job: Doc,
 ) -> tuple[float, dict[str, float], list[str], list[str]]:
     """Match only required skills against profile/resume and ATS readiness."""
     profile_text = " ".join(
@@ -174,7 +172,7 @@ def calculate_job_match(
     )
 
 
-def eligibility_check(student: Student, job: Job) -> tuple[bool, list[str]]:
+def eligibility_check(student: Doc, job: Doc) -> tuple[bool, list[str]]:
     """Check non-negotiable company rules before using the match score."""
     reasons: list[str] = []
 
@@ -199,8 +197,8 @@ def eligibility_check(student: Student, job: Job) -> tuple[bool, list[str]]:
 
 
 def evaluate_candidate(
-    student: Student,
-    job: Job,
+    student: Doc,
+    job: Doc,
 ) -> tuple[
     bool,
     list[str],
@@ -231,12 +229,12 @@ def evaluate_candidate(
 
 
 def make_application(
-    student: Student,
-    job: Job,
+    student: Doc,
+    job: Doc,
     *,
     recruiter_invitation: bool,
-) -> Application:
-    """Build an application record using the shared candidate evaluation."""
+) -> dict:
+    """Build the application data using the shared candidate evaluation."""
     (
         interview_eligible,
         reasons,
@@ -260,24 +258,24 @@ def make_application(
         status_text = "Eligible for AI Interview"
         recommendation = "Proceed to the company-specific AI interview."
 
-    return Application(
-        student_id=student.id,
-        job_id=job.id,
-        eligible=interview_eligible,
-        eligibility_reasons=json.dumps(reasons),
-        match_score=match_score,
-        score_breakdown=json.dumps(breakdown),
-        matched_skills=json.dumps(matched_skills),
-        missing_skills=json.dumps(missing_skills),
-        status=status_text,
-        recommendation=recommendation,
-    )
+    return {
+        "student_id": student.id,
+        "job_id": job.id,
+        "eligible": interview_eligible,
+        "eligibility_reasons": json.dumps(reasons),
+        "match_score": match_score,
+        "score_breakdown": json.dumps(breakdown),
+        "matched_skills": json.dumps(matched_skills),
+        "missing_skills": json.dumps(missing_skills),
+        "status": status_text,
+        "recommendation": recommendation,
+    }
 
 
 def build_response(
-    application: Application,
-    student: Student,
-    job: Job,
+    application: Doc,
+    student: Doc,
+    job: Doc,
     company_interview_id: int | None = None,
 ) -> ApplicationResponse:
     return ApplicationResponse(
@@ -310,9 +308,9 @@ def build_response(
 
 
 def build_student_response(
-    application: Application,
-    student: Student,
-    job: Job,
+    application: Doc,
+    student: Doc,
+    job: Doc,
 ) -> StudentApplicationResponse:
     """Return only the interview decision, never the internal matching score."""
     return StudentApplicationResponse(
@@ -334,45 +332,31 @@ def build_student_response(
     response_model=StudentApplicationResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def apply_to_job(payload: ApplicationCreate, db: Session = Depends(get_db)):
+def apply_to_job(payload: ApplicationCreate):
     """Create an application, run matching, and save the explainable result."""
-    student = db.query(Student).filter(Student.id == payload.student_id).first()
+    student = students.get(payload.student_id)
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
 
-    job = db.query(Job).filter(Job.id == payload.job_id).first()
+    job = jobs.get(payload.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    duplicate = (
-        db.query(Application)
-        .filter(
-            Application.student_id == student.id,
-            Application.job_id == job.id,
-        )
-        .first()
-    )
+    duplicate = applications.get_by_student_and_job(student.id, job.id)
     if duplicate:
         raise HTTPException(
             status_code=409,
             detail="This student has already applied to this job.",
         )
 
-    application = make_application(
-        student,
-        job,
-        recruiter_invitation=False,
-    )
-    db.add(application)
+    application_data = make_application(student, job, recruiter_invitation=False)
     try:
-        db.commit()
-    except IntegrityError as error:
-        db.rollback()
+        application = applications.create(application_data)
+    except (DuplicateRecordError, DuplicateKeyError) as error:
         raise HTTPException(
             status_code=409,
             detail="This student has already applied to this job.",
         ) from error
-    db.refresh(application)
     return build_student_response(application, student, job)
 
 
@@ -380,20 +364,18 @@ def apply_to_job(payload: ApplicationCreate, db: Session = Depends(get_db)):
     "/job/{job_id}/matches",
     response_model=list[CandidateMatchResponse],
 )
-def get_matching_students(job_id: int, db: Session = Depends(get_db)):
+def get_matching_students(job_id: int):
     """Rank every student for a job so recruiters can discover candidates."""
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     existing_applications = {
         application.student_id: application
-        for application in db.query(Application)
-        .filter(Application.job_id == job_id)
-        .all()
+        for application in applications.list_by_job(job_id)
     }
     responses: list[CandidateMatchResponse] = []
-    for student in db.query(Student).order_by(Student.name.asc()).all():
+    for student in students.list(sort=[("name", 1)]):
         (
             interview_eligible,
             reasons,
@@ -440,38 +422,24 @@ def get_matching_students(job_id: int, db: Session = Depends(get_db)):
     response_model=ApplicationResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def invite_student(
-    payload: RecruiterInvitationCreate,
-    db: Session = Depends(get_db),
-):
+def invite_student(payload: RecruiterInvitationCreate):
     """Create an interview invitation for one automatically matched student."""
-    student = db.query(Student).filter(Student.id == payload.student_id).first()
+    student = students.get(payload.student_id)
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
-    job = db.query(Job).filter(Job.id == payload.job_id).first()
+    job = jobs.get(payload.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    existing = (
-        db.query(Application)
-        .filter(
-            Application.student_id == student.id,
-            Application.job_id == job.id,
-        )
-        .first()
-    )
+    existing = applications.get_by_student_and_job(student.id, job.id)
     if existing:
         raise HTTPException(
             status_code=409,
             detail="This student already has an application or invitation for the job.",
         )
 
-    application = make_application(
-        student,
-        job,
-        recruiter_invitation=True,
-    )
-    if not application.eligible:
+    application_data = make_application(student, job, recruiter_invitation=True)
+    if not application_data["eligible"]:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -480,16 +448,13 @@ def invite_student(
             ),
         )
 
-    db.add(application)
     try:
-        db.commit()
-    except IntegrityError as error:
-        db.rollback()
+        application = applications.create(application_data)
+    except (DuplicateRecordError, DuplicateKeyError) as error:
         raise HTTPException(
             status_code=409,
             detail="This student already has an application or invitation for the job.",
         ) from error
-    db.refresh(application)
     return build_response(application, student, job)
 
 
@@ -497,46 +462,31 @@ def invite_student(
     "/job/{job_id}/invite-matches",
     response_model=BulkInvitationResponse,
 )
-def invite_all_matching_students(
-    job_id: int,
-    db: Session = Depends(get_db),
-):
+def invite_all_matching_students(job_id: int):
     """Invite every qualified student who has not already applied to the job."""
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    existing_student_ids = {
-        student_id
-        for (student_id,) in db.query(Application.student_id)
-        .filter(Application.job_id == job_id)
-        .all()
-    }
+    existing_student_ids = applications.student_ids_for_job(job_id)
     invited_count = 0
     skipped_count = 0
-    for student in db.query(Student).all():
+    for student in students.list():
         if student.id in existing_student_ids:
             skipped_count += 1
             continue
-        application = make_application(
-            student,
-            job,
-            recruiter_invitation=True,
-        )
-        if not application.eligible:
+        application_data = make_application(student, job, recruiter_invitation=True)
+        if not application_data["eligible"]:
             skipped_count += 1
             continue
-        db.add(application)
+        try:
+            applications.create(application_data)
+        except (DuplicateRecordError, DuplicateKeyError):
+            # Another request created this exact pair between our check and
+            # the insert; treat it the same as an existing application.
+            skipped_count += 1
+            continue
         invited_count += 1
-
-    try:
-        db.commit()
-    except IntegrityError as error:
-        db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Candidate invitations changed while the bulk invite was running. Retry once.",
-        ) from error
 
     return BulkInvitationResponse(
         message=(
@@ -552,45 +502,34 @@ def invite_all_matching_students(
     "/student/{student_id}",
     response_model=list[StudentApplicationResponse],
 )
-def get_student_applications(student_id: int, db: Session = Depends(get_db)):
-    student = db.query(Student).filter(Student.id == student_id).first()
+def get_student_applications(student_id: int):
+    student = students.get(student_id)
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
 
-    records = (
-        db.query(Application, Job)
-        .join(Job, Job.id == Application.job_id)
-        .filter(Application.student_id == student_id)
-        .order_by(Application.id.desc())
-        .all()
-    )
+    records = applications.list_by_student(student_id)
+    jobs_by_id = jobs.many_by_id(record.job_id for record in records)
     return [
-        build_student_response(application, student, job)
-        for application, job in records
+        build_student_response(application, student, jobs_by_id[application.job_id])
+        for application in records
+        if application.job_id in jobs_by_id
     ]
 
 
 @router.get("/job/{job_id}", response_model=list[ApplicationResponse])
-def get_job_applications(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+def get_job_applications(job_id: int):
+    job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    records = (
-        db.query(Application, Student)
-        .join(Student, Student.id == Application.student_id)
-        .filter(Application.job_id == job_id)
-        .order_by(Application.match_score.desc())
-        .all()
-    )
+    records = applications.list_by_job(job_id, sort_by_match=True)
+    students_by_id = students.many_by_id(record.student_id for record in records)
     responses: list[ApplicationResponse] = []
-    for application, student in records:
-        company_interview = (
-            db.query(CompanyInterview)
-            .filter(CompanyInterview.application_id == application.id)
-            .order_by(CompanyInterview.id.desc())
-            .first()
-        )
+    for application in records:
+        student = students_by_id.get(application.student_id)
+        if not student:
+            continue
+        company_interview = company_interviews.latest_for_application(application.id)
         responses.append(
             build_response(
                 application,
@@ -609,7 +548,6 @@ def get_job_applications(job_id: int, db: Session = Depends(get_db)):
 def save_recruiter_decision(
     application_id: int,
     payload: RecruiterDecisionUpdate,
-    db: Session = Depends(get_db),
 ):
     """Calculate the final score and publish the recruiter's decision."""
     allowed_decisions = {"Shortlisted", "Rejected", "Selected", "On Hold"}
@@ -619,18 +557,12 @@ def save_recruiter_decision(
             detail="Decision must be Shortlisted, Rejected, Selected, or On Hold.",
         )
 
-    application = (
-        db.query(Application)
-        .filter(Application.id == application_id)
-        .first()
-    )
+    application = applications.get(application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    student = (
-        db.query(Student).filter(Student.id == application.student_id).first()
-    )
-    job = db.query(Job).filter(Job.id == application.job_id).first()
+    student = students.get(application.student_id)
+    job = jobs.get(application.job_id)
     if not student or not job:
         raise HTTPException(
             status_code=404,
@@ -658,15 +590,9 @@ def save_recruiter_decision(
     application.final_score = final_score
     application.status = payload.decision
     application.recommendation = f"Recruiter decision: {payload.decision}."
-    db.commit()
-    db.refresh(application)
+    applications.save(application)
 
-    company_interview = (
-        db.query(CompanyInterview)
-        .filter(CompanyInterview.application_id == application.id)
-        .order_by(CompanyInterview.id.desc())
-        .first()
-    )
+    company_interview = company_interviews.latest_for_application(application.id)
     return build_response(
         application,
         student,

@@ -6,18 +6,17 @@ from pathlib import Path
 from uuid import uuid4
 
 import fitz
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from pymongo.errors import DuplicateKeyError
 
-from ..database import get_db
-from ..models import Student
+from ..models import Doc, DuplicateRecordError, students
 from ..role_profiles import TARGET_ROLES, get_role_profile
 
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
-# Resume files are stored outside SQLite; SQLite stores only their file paths.
+# Resume files are stored outside MongoDB; MongoDB stores only their file paths.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RESUME_UPLOAD_DIR = PROJECT_ROOT / "uploads" / "resumes"
 MAX_RESUME_SIZE = 5 * 1024 * 1024
@@ -79,8 +78,6 @@ class StudentSignIn(BaseModel):
 
 # Safe student fields returned from the backend to the frontend.
 class StudentResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     email: str
@@ -462,11 +459,10 @@ async def create_student(
     skills: str | None = Form(default=None),
     github_url: str | None = Form(default=None),
     leetcode_url: str | None = Form(default=None),
-    db: Session = Depends(get_db),
 ):
     # Reuse the same Pydantic validation as the rest of the student APIs.
     try:
-        student = StudentCreate(
+        student_payload = StudentCreate(
             name=name,
             email=email,
             college=college,
@@ -485,44 +481,46 @@ async def create_student(
             detail=first_error.get("msg", "Invalid student profile."),
         ) from error
 
-    normalized_email = student.email.strip().lower()
-    existing_student = (
-        db.query(Student).filter(Student.email == normalized_email).first()
-    )
-
-    if existing_student:
+    normalized_email = student_payload.email.strip().lower()
+    if students.get_by_email(normalized_email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A student with this email already exists.",
         )
-    if student.target_role not in TARGET_ROLES:
+    if student_payload.target_role not in TARGET_ROLES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Select one of the supported target job roles.",
         )
 
-    new_student = Student(
-        name=student.name.strip(),
-        email=normalized_email,
-        college=student.college.strip() if student.college else None,
-        branch=student.branch.strip() if student.branch else None,
-        cgpa=student.cgpa,
-        skills=student.skills.strip() if student.skills else None,
-        target_role=student.target_role,
-        linkedin_url=student.linkedin_url,
-        github_url=student.github_url,
-        leetcode_url=student.leetcode_url,
-    )
-
-    db.add(new_student)
-    db.flush()
-
-    # The resume endpoint performs PDF validation, extraction, scoring and commit.
-    # Rolling back here prevents an incomplete profile if resume analysis fails.
     try:
-        result = await upload_resume(new_student.id, file, db)
+        new_student = students.create(
+            {
+                "name": student_payload.name.strip(),
+                "email": normalized_email,
+                "college": student_payload.college.strip() if student_payload.college else None,
+                "branch": student_payload.branch.strip() if student_payload.branch else None,
+                "cgpa": student_payload.cgpa,
+                "skills": student_payload.skills.strip() if student_payload.skills else None,
+                "target_role": student_payload.target_role,
+                "linkedin_url": student_payload.linkedin_url,
+                "github_url": student_payload.github_url,
+                "leetcode_url": student_payload.leetcode_url,
+            }
+        )
+    except (DuplicateRecordError, DuplicateKeyError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A student with this email already exists.",
+        ) from error
+
+    # The resume endpoint performs PDF validation, extraction, and scoring.
+    # If it fails, delete the profile we just created so we don't leave a
+    # student record behind with no resume (this replaces the SQL rollback).
+    try:
+        result = await upload_resume(new_student.id, file)
     except Exception:
-        db.rollback()
+        students.delete(new_student.id)
         raise
 
     result.message = "Student profile created and resume analyzed successfully."
@@ -534,15 +532,10 @@ async def create_student(
     response_model=StudentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register_student(
-    registration: StudentRegistration,
-    db: Session = Depends(get_db),
-):
+def register_student(registration: StudentRegistration):
     """Create a student account before resume analysis."""
     normalized_email = registration.email.strip().lower()
-    existing_student = (
-        db.query(Student).filter(Student.email == normalized_email).first()
-    )
+    existing_student = students.get_by_email(normalized_email)
     if existing_student:
         if existing_student.password_hash:
             raise HTTPException(
@@ -574,46 +567,41 @@ def register_student(
             if registration.leetcode_url
             else existing_student.leetcode_url
         )
-        db.commit()
-        db.refresh(existing_student)
+        students.save(existing_student)
         return existing_student
 
-    new_student = Student(
-        name=registration.name.strip(),
-        email=normalized_email,
-        password_hash=hash_password(registration.password),
-        college=registration.college.strip(),
-        branch=registration.branch.strip(),
-        cgpa=registration.cgpa,
-        skills=registration.skills.strip() if registration.skills else None,
-        linkedin_url=(
-            registration.linkedin_url.strip()
-            if registration.linkedin_url
-            else None
-        ),
-        github_url=(
-            registration.github_url.strip() if registration.github_url else None
-        ),
-        leetcode_url=(
-            registration.leetcode_url.strip()
-            if registration.leetcode_url
-            else None
-        ),
+    new_student = students.create(
+        {
+            "name": registration.name.strip(),
+            "email": normalized_email,
+            "password_hash": hash_password(registration.password),
+            "college": registration.college.strip(),
+            "branch": registration.branch.strip(),
+            "cgpa": registration.cgpa,
+            "skills": registration.skills.strip() if registration.skills else None,
+            "linkedin_url": (
+                registration.linkedin_url.strip()
+                if registration.linkedin_url
+                else None
+            ),
+            "github_url": (
+                registration.github_url.strip() if registration.github_url else None
+            ),
+            "leetcode_url": (
+                registration.leetcode_url.strip()
+                if registration.leetcode_url
+                else None
+            ),
+        }
     )
-    db.add(new_student)
-    db.commit()
-    db.refresh(new_student)
     return new_student
 
 
 @router.post("/sign-in", response_model=StudentResponse)
-def sign_in_student(
-    credentials: StudentSignIn,
-    db: Session = Depends(get_db),
-):
+def sign_in_student(credentials: StudentSignIn):
     """Verify a student email and password for the prototype dashboard."""
     normalized_email = credentials.email.strip().lower()
-    student = db.query(Student).filter(Student.email == normalized_email).first()
+    student = students.get_by_email(normalized_email)
     if not student or not verify_password(
         credentials.password,
         student.password_hash,
@@ -633,12 +621,8 @@ def get_target_roles():
 
 # Add or update external professional profiles for an existing student.
 @router.patch("/{student_id}/profile-links", response_model=StudentResponse)
-def update_profile_links(
-    student_id: int,
-    update: ProfileLinksUpdate,
-    db: Session = Depends(get_db),
-):
-    student = db.query(Student).filter(Student.id == student_id).first()
+def update_profile_links(student_id: int, update: ProfileLinksUpdate):
+    student = students.get(student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -648,19 +632,14 @@ def update_profile_links(
     student.linkedin_url = update.linkedin_url
     student.github_url = update.github_url
     student.leetcode_url = update.leetcode_url
-    db.commit()
-    db.refresh(student)
+    students.save(student)
     return student
 
 
 # Change an existing student's role and recalculate their saved resume match.
 @router.patch("/{student_id}/target-role", response_model=StudentResponse)
-def update_target_role(
-    student_id: int,
-    update: TargetRoleUpdate,
-    db: Session = Depends(get_db),
-):
-    student = db.query(Student).filter(Student.id == student_id).first()
+def update_target_role(student_id: int, update: TargetRoleUpdate):
+    student = students.get(student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -680,22 +659,20 @@ def update_target_role(
         )[0]
     else:
         student.role_match_score = 0
-    db.commit()
-    db.refresh(student)
+    students.save(student)
     return student
 
 
 # Return every saved student, newest first.
 @router.get("", response_model=list[StudentResponse])
-def get_students(db: Session = Depends(get_db)):
-    return db.query(Student).order_by(Student.id.desc()).all()
+def get_students():
+    return students.list(sort=[("id", -1)])
 
 
 # Return one student. The mock-interview page uses this endpoint.
 @router.get("/{student_id}", response_model=StudentResponse)
-def get_student(student_id: int, db: Session = Depends(get_db)):
-    student = db.query(Student).filter(Student.id == student_id).first()
-
+def get_student(student_id: int):
+    student = students.get(student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -709,9 +686,8 @@ def get_student(student_id: int, db: Session = Depends(get_db)):
 async def upload_resume(
     student_id: int,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
 ):
-    student = db.query(Student).filter(Student.id == student_id).first()
+    student = students.get(student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -785,8 +761,7 @@ async def upload_resume(
     student.resume_text = resume_text
     student.resume_score = resume_score
     student.role_match_score = role_match_score
-    db.commit()
-    db.refresh(student)
+    students.save(student)
 
     if previous_resume_path and previous_resume_path != stored_path:
         previous_resume_path.unlink(missing_ok=True)
