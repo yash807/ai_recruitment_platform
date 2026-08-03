@@ -51,6 +51,7 @@ temporary_directory = tempfile.TemporaryDirectory()
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models import self_introductions, students
 from app.mongo import client as mongo_client, mongo_db
 from app.routes import students as student_routes
 
@@ -314,6 +315,37 @@ def run() -> None:
         )
         expect_status(bulk_invitation, 200)
         assert bulk_invitation.json()["invited_count"] == 0
+
+        blocked_mock_interview = client.post(
+            f"/mock-interviews/start/{student_id}"
+        )
+        expect_status(blocked_mock_interview, 403)
+        assert "self-introduction" in blocked_mock_interview.text
+
+        introduction_challenge = client.get(
+            f"/self-introductions/challenge/{student_id}"
+        )
+        expect_status(introduction_challenge, 200)
+        introduction_id = introduction_challenge.json()["introduction_id"]
+        assert introduction_challenge.json()["challenge_phrase"]
+        assert len(introduction_challenge.json()["template"]) == 5
+
+        # Media processing is covered separately; seed a verified enrollment
+        # here so this database smoke test can exercise the downstream gates.
+        introduction = self_introductions.get(introduction_id)
+        introduction.status = "Completed"
+        introduction.liveness_status = "Verified"
+        introduction.identity_enrollment_status = "Verified"
+        introduction.identity_reference = {
+            "version": "prototype-face-continuity-v1",
+            "signature": [1.0, 0.0, 0.0],
+        }
+        self_introductions.save(introduction)
+        enrolled_student = students.get(student_id)
+        enrolled_student.self_introduction_id = introduction_id
+        enrolled_student.self_introduction_status = "Completed"
+        enrolled_student.identity_enrollment_status = "Verified"
+        students.save(enrolled_student)
 
         mock_interview = client.post(f"/mock-interviews/start/{student_id}")
         expect_status(mock_interview, 200)

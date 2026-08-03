@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-// All browser requests stay on the Next.js origin and are proxied to FastAPI.
+import { getBackendMediaUrl } from "../backend-media";
+
+// Small API calls use the Next.js proxy; video files upload directly to FastAPI.
 const API_URL = "/api";
 
 // Student-safe session returned by the company-interview API.
@@ -13,6 +15,7 @@ type CompanyInterviewSession = {
   company_name: string;
   job_title: string;
   questions: string[];
+  max_questions: number;
   recorded_question_indexes: number[];
   status: string;
   analysis_status: string;
@@ -22,6 +25,8 @@ type VideoAnswerResult = {
   message: string;
   interview_id: number;
   question_index: number;
+  questions: string[];
+  next_question_index: number | null;
   recorded_question_indexes: number[];
   status: string;
   detail?: string;
@@ -152,6 +157,9 @@ export default function CompanyInterviewPage() {
     if (!interview) return;
 
     setUploading(true);
+    setMessage(
+      "Checking identity, transcribing your answer, and preparing the next question...",
+    );
     try {
       const extension = mimeType.includes("mp4") ? "mp4" : "webm";
       const videoFile = new File(
@@ -162,8 +170,11 @@ export default function CompanyInterviewPage() {
       const uploadData = new FormData();
       uploadData.append("video", videoFile);
 
+      const uploadUrl = await getBackendMediaUrl(
+        `/company-interviews/${interview.id}/answers/${currentQuestionIndex}`,
+      );
       const response = await fetch(
-        `${API_URL}/company-interviews/${interview.id}/answers/${currentQuestionIndex}`,
+        uploadUrl,
         {
           method: "POST",
           body: uploadData,
@@ -180,6 +191,7 @@ export default function CompanyInterviewPage() {
         current
           ? {
               ...current,
+              questions: result.questions,
               recorded_question_indexes: result.recorded_question_indexes,
               status: result.status,
             }
@@ -190,11 +202,13 @@ export default function CompanyInterviewPage() {
         streamRef.current?.getTracks().forEach((track) => track.stop());
         setCameraReady(false);
         setMessage(
-          "All five answers are saved. Submit them for private recruiter analysis.",
+          `All ${interview.max_questions} answers are saved. Submit them for private recruiter analysis.`,
         );
       } else {
-        setCurrentQuestionIndex((current) => current + 1);
-        setMessage("Answer saved. Continue with the next question.");
+        setCurrentQuestionIndex(
+          result.next_question_index ?? currentQuestionIndex + 1,
+        );
+        setMessage(result.message);
       }
     } catch (error) {
       setMessage(
@@ -245,13 +259,13 @@ export default function CompanyInterviewPage() {
     }
   }
 
-  // Run local transcription/evaluation and save the private recruiter result.
+  // Evaluate the already-transcribed answers and save the recruiter result.
   async function submitInterview() {
     if (!interview) return;
 
     setSubmitting(true);
     setMessage(
-      "Submitting interview. Local transcription and evaluation may take a few minutes...",
+      "Submitting interview. Your saved transcripts are being evaluated privately...",
     );
     try {
       const response = await fetch(
@@ -332,8 +346,9 @@ export default function CompanyInterviewPage() {
             Company-specific AI video interview
           </h1>
           <p className="mt-3 max-w-2xl text-slate-300">
-            Questions are generated from the company job description, required
-            skills, selected role, and your resume context.
+            Each question is generated from the company job description and
+            your previous answer. Resume and identity data are not sent to the
+            language model.
           </p>
         </header>
 
@@ -378,7 +393,7 @@ export default function CompanyInterviewPage() {
                 <span>Interview progress</span>
                 <span>
                   {interview.recorded_question_indexes.length}/
-                  {interview.questions.length} saved
+                  {interview.max_questions} saved
                 </span>
               </div>
               <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
@@ -387,7 +402,7 @@ export default function CompanyInterviewPage() {
                   style={{
                     width: `${
                       (interview.recorded_question_indexes.length /
-                        interview.questions.length) *
+                        interview.max_questions) *
                       100
                     }%`,
                   }}
@@ -412,7 +427,7 @@ export default function CompanyInterviewPage() {
                     All answers recorded
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    Submit once. The recordings will be transcribed locally and
+                    Submit once. Your locally prepared transcripts will be
                     evaluated against the company role.
                   </p>
                   <button
@@ -422,7 +437,7 @@ export default function CompanyInterviewPage() {
                     type="button"
                   >
                     {submitting
-                      ? "Transcribing and submitting..."
+                      ? "Evaluating and submitting..."
                       : "Submit company interview"}
                   </button>
                 </div>
@@ -430,7 +445,7 @@ export default function CompanyInterviewPage() {
                 <>
                   <p className="mt-8 text-sm font-semibold text-emerald-300">
                     Question {currentQuestionIndex + 1} of{" "}
-                    {interview.questions.length}
+                    {interview.max_questions}
                   </p>
                   <h2 className="mt-3 text-2xl font-bold leading-9">
                     {currentQuestion}
@@ -516,8 +531,8 @@ export default function CompanyInterviewPage() {
 
               <p className="mt-5 text-xs leading-5 text-slate-400">
                 Video files remain in the prototype&apos;s local uploads folder.
-                Transcription uses the local Whisper model; no paid API is
-                required.
+                Speech transcription stays local. Only the job description and
+                answer transcript are used to prepare the next question.
               </p>
             </section>
           </div>

@@ -141,6 +141,9 @@ class StudentRepository(MongoRepository):
         "role_match_score": 0,
         "mock_interview_score": 0,
         "ai_profile_summary": None,
+        "self_introduction_id": None,
+        "self_introduction_status": "Not Started",
+        "identity_enrollment_status": "Not Started",
     }
 
     def get_by_email(self, email: str) -> Doc | None:
@@ -209,11 +212,79 @@ class MockInterviewRepository(MongoRepository):
     }
 
 
+class SelfIntroductionRepository(MongoRepository):
+    collection_name = "self_introductions"
+    defaults = {
+        "video_path": None,
+        "transcript": None,
+        "extracted_profile": None,
+        "status": "Not Started",
+        "liveness_status": "Not Started",
+        "identity_enrollment_status": "Not Started",
+        "identity_reference": None,
+        "analysis_error": None,
+        "challenge_phrase": None,
+        "challenge_created_at": None,
+        "challenge_consumed_at": None,
+        "submitted_at": None,
+    }
+
+    def latest_for_student(self, student_id: int) -> Doc | None:
+        documents = list(
+            self.collection.find({"student_id": student_id})
+            .sort("id", DESCENDING)
+            .limit(1)
+        )
+        return _wrap(documents[0]) if documents else None
+
+    def claim_for_processing(self, introduction_id: int) -> Doc | None:
+        """Atomically consume one active challenge so it cannot be replayed."""
+        return _wrap(
+            self.collection.find_one_and_update(
+                {
+                    "id": introduction_id,
+                    "status": {"$in": ["Ready to Record", "Needs Retake"]},
+                    "challenge_consumed_at": None,
+                },
+                {
+                    "$set": {
+                        "status": "Processing",
+                        "challenge_consumed_at": datetime.now(timezone.utc),
+                    }
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        )
+
+
+class IdentityCheckRepository(MongoRepository):
+    collection_name = "identity_checks"
+    defaults = {
+        "stage": None,
+        "interview_id": None,
+        "session_type": None,
+        "session_id": None,
+        "introduction_id": None,
+        "reference_version": None,
+        "question_index": None,
+        "video_path": None,
+        "face_count": None,
+        "status": "Pending",
+        "similarity_score": None,
+        "review_reason": None,
+    }
+
+
 class CompanyInterviewRepository(MongoRepository):
     collection_name = "company_interviews"
     defaults = {
         "video_paths": "{}",
         "transcripts": "[]",
+        "question_metadata": "[]",
+        "max_questions": 5,
+        "adaptive_version": None,
+        "job_description_snapshot": None,
+        "required_skills_snapshot": "[]",
         "ai_evaluation": None,
         "status": "In Progress",
         "analysis_status": "Not Started",
@@ -224,6 +295,24 @@ class CompanyInterviewRepository(MongoRepository):
     def latest_for_application(self, application_id: int) -> Doc | None:
         documents = list(
             self.collection.find({"application_id": application_id})
+            .sort("id", DESCENDING)
+            .limit(1)
+        )
+        return _wrap(documents[0]) if documents else None
+
+    def latest_completed_for_application(
+        self,
+        application_id: int,
+    ) -> Doc | None:
+        """Return the newest interview that has a saved recruiter result."""
+        documents = list(
+            self.collection.find(
+                {
+                    "application_id": application_id,
+                    "analysis_status": "Completed",
+                    "ai_evaluation": {"$nin": [None, ""]},
+                }
+            )
             .sort("id", DESCENDING)
             .limit(1)
         )
@@ -247,6 +336,30 @@ def ensure_indexes() -> None:
     mongo_db["mock_interviews"].create_index("id", unique=True)
     mongo_db["mock_interviews"].create_index("student_id")
 
+    mongo_db["self_introductions"].create_index("id", unique=True)
+    mongo_db["self_introductions"].create_index(
+        [("student_id", ASCENDING), ("id", DESCENDING)]
+    )
+
+    mongo_db["identity_checks"].create_index("id", unique=True)
+    mongo_db["identity_checks"].create_index("student_id")
+    mongo_db["identity_checks"].create_index(
+        [
+            ("student_id", ASCENDING),
+            ("stage", ASCENDING),
+            ("interview_id", ASCENDING),
+            ("introduction_id", ASCENDING),
+            ("question_index", ASCENDING),
+        ]
+    )
+    mongo_db["identity_checks"].create_index(
+        [
+            ("session_type", ASCENDING),
+            ("session_id", ASCENDING),
+            ("question_index", ASCENDING),
+        ]
+    )
+
     mongo_db["company_interviews"].create_index("id", unique=True)
     mongo_db["company_interviews"].create_index("application_id")
 
@@ -255,4 +368,6 @@ students = StudentRepository()
 jobs = JobRepository()
 applications = ApplicationRepository()
 mock_interviews = MockInterviewRepository()
+self_introductions = SelfIntroductionRepository()
+identity_checks = IdentityCheckRepository()
 company_interviews = CompanyInterviewRepository()

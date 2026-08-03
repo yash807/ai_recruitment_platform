@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from pathlib import Path
 from uuid import uuid4
@@ -13,8 +14,22 @@ from ..ai_interview_service import (
     evaluate_transcripts,
     transcribe_recordings,
 )
+from ..adaptive_interview_service import (
+    AdaptiveQuestion,
+    generate_adaptive_question,
+)
+from ..identity_workflow import (
+    IdentityContinuityError,
+    require_verified_identity_enrollment,
+    require_verified_recording_checks,
+    verify_interview_recording_identity,
+)
+from ..media_uploads import (
+    EmptyUploadError,
+    UploadTooLargeError,
+    stream_upload_to_path,
+)
 from ..models import Doc, applications, company_interviews, jobs, students
-from ..role_profiles import get_role_profile
 from .applications import split_requirements
 
 
@@ -27,6 +42,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INTERVIEW_UPLOAD_DIR = PROJECT_ROOT / "uploads" / "interviews"
 ALLOWED_VIDEO_EXTENSIONS = {".webm", ".mp4", ".mov"}
 MAX_VIDEO_SIZE = 100 * 1024 * 1024
+ADAPTIVE_INTERVIEW_VERSION = "jd-adaptive-v1"
+DEFAULT_MAX_QUESTIONS = 5
 
 
 class CompanyInterviewResponse(BaseModel):
@@ -37,6 +54,7 @@ class CompanyInterviewResponse(BaseModel):
     company_name: str
     job_title: str
     questions: list[str]
+    max_questions: int
     recorded_question_indexes: list[int]
     status: str
     analysis_status: str
@@ -46,6 +64,8 @@ class CompanyVideoAnswerResponse(BaseModel):
     message: str
     interview_id: int
     question_index: int
+    questions: list[str]
+    next_question_index: int | None
     recorded_question_indexes: list[int]
     status: str
 
@@ -66,45 +86,69 @@ class RecruiterInterviewResult(BaseModel):
     evaluation: InterviewEvaluation
 
 
-def generate_company_questions(student: Doc, job: Doc) -> list[str]:
-    """Create five questions from the JD, required skills, and resume context."""
-    required_skills = split_requirements(job.required_skills)
-    primary_skill = required_skills[0] if required_skills else "the main required skill"
-    second_skill = required_skills[1] if len(required_skills) > 1 else primary_skill
-    role_profile = get_role_profile(job.job_title)
-    role_questions = (
-        role_profile["interview_questions"]
-        if role_profile
-        else (
-            f"What knowledge is most important for {job.job_title}?",
-            f"Describe how you would solve a common {job.job_title} task.",
+def get_max_questions() -> int:
+    """Return a bounded interview length from local/Render configuration."""
+    try:
+        configured = int(
+            os.getenv("COMPANY_INTERVIEW_MAX_QUESTIONS", DEFAULT_MAX_QUESTIONS)
         )
+    except ValueError:
+        configured = DEFAULT_MAX_QUESTIONS
+    return max(3, min(8, configured))
+
+
+def question_metadata(question: AdaptiveQuestion) -> dict:
+    return question.model_dump(exclude={"question"})
+
+
+def build_adaptive_question(
+    *,
+    job: Doc,
+    previous_turns: list[dict[str, str]],
+    question_index: int,
+    max_questions: int,
+) -> AdaptiveQuestion:
+    return generate_adaptive_question(
+        job_title=job.job_title,
+        company_name=job.company_name,
+        job_description=job.job_description or job.job_title,
+        required_skills=split_requirements(job.required_skills),
+        previous_turns=previous_turns,
+        question_index=question_index,
+        max_questions=max_questions,
     )
 
-    description = " ".join((job.job_description or "").split())
-    responsibility = description.split(".")[0][:220] or (
-        f"deliver the responsibilities of a {job.job_title}"
-    )
 
-    return [
-        (
-            f"Introduce yourself and explain why your background is suitable for "
-            f"the {job.job_title} role at {job.company_name}."
-        ),
-        (
-            f"Choose one project from your resume that is relevant to {primary_skill}. "
-            "Explain your contribution, technical decisions, and result."
-        ),
-        (
-            f"This job requires {second_skill}. Explain how you have used it, "
-            "or how you would use it to solve a practical task."
-        ),
-        role_questions[0],
-        (
-            f"The job description includes this responsibility: \u201c{responsibility}\u201d. "
-            f"{role_questions[1]}"
-        ),
-    ]
+def initialise_adaptive_fields(interview: Doc, job: Doc) -> Doc:
+    """Start adaptive mode or migrate an untouched legacy interview."""
+    if interview.adaptive_version == ADAPTIVE_INTERVIEW_VERSION:
+        return interview
+
+    video_paths = json.loads(interview.video_paths or "{}")
+    if video_paths or interview.analysis_status == "Completed":
+        # Preserve an already-started legacy interview instead of invalidating
+        # its recordings. New and untouched interviews use adaptive mode.
+        return interview
+
+    max_questions = get_max_questions()
+    first = build_adaptive_question(
+        job=job,
+        previous_turns=[],
+        question_index=0,
+        max_questions=max_questions,
+    )
+    interview.questions = json.dumps([first.question])
+    interview.question_metadata = json.dumps([question_metadata(first)])
+    interview.transcripts = "[]"
+    interview.max_questions = max_questions
+    interview.adaptive_version = ADAPTIVE_INTERVIEW_VERSION
+    interview.job_description_snapshot = job.job_description or job.job_title
+    interview.required_skills_snapshot = json.dumps(
+        split_requirements(job.required_skills)
+    )
+    interview.status = "In Progress"
+    interview.analysis_status = "Not Started"
+    return interview
 
 
 def get_interview_context(interview: Doc) -> tuple[Doc, Doc, Doc]:
@@ -124,12 +168,14 @@ def get_interview_context(interview: Doc) -> tuple[Doc, Doc, Doc]:
 
 def serialize_interview(interview: Doc, job: Doc) -> CompanyInterviewResponse:
     video_paths = json.loads(interview.video_paths or "{}")
+    questions = json.loads(interview.questions or "[]")
     return CompanyInterviewResponse(
         id=interview.id,
         application_id=interview.application_id,
         company_name=job.company_name,
         job_title=job.job_title,
-        questions=json.loads(interview.questions),
+        questions=questions,
+        max_questions=interview.max_questions or len(questions),
         recorded_question_indexes=sorted(int(index) for index in video_paths),
         status=interview.status,
         analysis_status=interview.analysis_status,
@@ -158,17 +204,44 @@ def start_company_interview(application_id: int):
             status_code=404,
             detail="Student or job record could not be found.",
         )
+    try:
+        require_verified_identity_enrollment(student)
+    except IdentityContinuityError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
 
     existing = company_interviews.latest_for_application(application.id)
     if existing:
+        previous_version = existing.adaptive_version
+        existing = initialise_adaptive_fields(existing, job)
+        if previous_version != existing.adaptive_version:
+            company_interviews.save(existing)
         return serialize_interview(existing, job)
 
+    max_questions = get_max_questions()
+    first_question = build_adaptive_question(
+        job=job,
+        previous_turns=[],
+        question_index=0,
+        max_questions=max_questions,
+    )
     interview = company_interviews.create(
         {
             "application_id": application.id,
-            "questions": json.dumps(generate_company_questions(student, job)),
+            "questions": json.dumps([first_question.question]),
+            "question_metadata": json.dumps(
+                [question_metadata(first_question)]
+            ),
             "video_paths": "{}",
             "transcripts": "[]",
+            "max_questions": max_questions,
+            "adaptive_version": ADAPTIVE_INTERVIEW_VERSION,
+            "job_description_snapshot": job.job_description or job.job_title,
+            "required_skills_snapshot": json.dumps(
+                split_requirements(job.required_skills)
+            ),
             "status": "In Progress",
             "analysis_status": "Not Started",
             "overall_score": 0,
@@ -195,7 +268,7 @@ def get_company_interview(interview_id: int):
     "/{interview_id}/answers/{question_index}",
     response_model=CompanyVideoAnswerResponse,
 )
-async def upload_company_video_answer(
+def upload_company_video_answer(
     interview_id: int,
     question_index: int,
     video: UploadFile = File(...),
@@ -213,6 +286,18 @@ async def upload_company_video_answer(
     if question_index < 0 or question_index >= len(questions):
         raise HTTPException(status_code=400, detail="Invalid question number.")
 
+    video_paths = json.loads(interview.video_paths or "{}")
+    if str(question_index) in video_paths:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This question already has a saved answer.",
+        )
+    if question_index != len(video_paths):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Answer the company interview questions in order.",
+        )
+
     original_filename = video.filename or "answer.webm"
     extension = Path(original_filename).suffix.lower()
     if extension not in ALLOWED_VIDEO_EXTENSIONS:
@@ -221,43 +306,123 @@ async def upload_company_video_answer(
             detail="Only WebM, MP4, or MOV video answers are supported.",
         )
 
-    video_bytes = await video.read()
-    if not video_bytes:
-        raise HTTPException(status_code=400, detail="The recorded video is empty.")
-    if len(video_bytes) > MAX_VIDEO_SIZE:
+    interview_directory = INTERVIEW_UPLOAD_DIR / f"company-{interview.id}"
+    stored_filename = f"question-{question_index + 1}-{uuid4().hex}{extension}"
+    stored_path = interview_directory / stored_filename
+    try:
+        stream_upload_to_path(
+            video,
+            stored_path,
+            max_size=MAX_VIDEO_SIZE,
+        )
+    except EmptyUploadError as error:
+        raise HTTPException(
+            status_code=400,
+            detail="The recorded video is empty.",
+        ) from error
+    except UploadTooLargeError as error:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Each video answer must be 100 MB or smaller.",
+        ) from error
+
+    _, student, job = get_interview_context(interview)
+    try:
+        verify_interview_recording_identity(
+            student=student,
+            video_path=stored_path,
+            stage="company_interview",
+            interview_id=interview.id,
+            question_index=question_index,
+        )
+    except IdentityContinuityError as error:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
+
+    try:
+        transcript = transcribe_recordings(
+            video_paths={"0": str(stored_path)},
+            question_count=1,
+        )[0]
+    except AIAnalysisError as error:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
+    if len(re.findall(r"[a-zA-Z0-9]+", transcript)) < 3:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "No clear spoken answer was detected. Record the answer again "
+                "in a quiet place and speak close to the microphone."
+            ),
         )
 
-    interview_directory = INTERVIEW_UPLOAD_DIR / f"company-{interview.id}"
-    interview_directory.mkdir(parents=True, exist_ok=True)
-    stored_filename = f"question-{question_index + 1}-{uuid4().hex}{extension}"
-    stored_path = interview_directory / stored_filename
-    stored_path.write_bytes(video_bytes)
-
-    video_paths = json.loads(interview.video_paths or "{}")
-    previous_path = (
-        Path(video_paths[str(question_index)])
-        if str(question_index) in video_paths
-        else None
-    )
     video_paths[str(question_index)] = str(stored_path)
+    transcripts = json.loads(interview.transcripts or "[]")
+    while len(transcripts) <= question_index:
+        transcripts.append("")
+    transcripts[question_index] = transcript
+
+    max_questions = interview.max_questions or len(questions)
+    metadata = json.loads(interview.question_metadata or "[]")
+    if (
+        interview.adaptive_version == ADAPTIVE_INTERVIEW_VERSION
+        and len(video_paths) < max_questions
+    ):
+        previous_turns = [
+            {"question": questions[index], "answer": transcripts[index]}
+            for index in range(len(video_paths))
+        ]
+        next_question = build_adaptive_question(
+            job=Doc(
+                {
+                    **job,
+                    "job_description": interview.job_description_snapshot
+                    or job.job_description,
+                    "required_skills": ", ".join(
+                        json.loads(
+                            interview.required_skills_snapshot or "[]"
+                        )
+                    )
+                    or job.required_skills,
+                }
+            ),
+            previous_turns=previous_turns,
+            question_index=len(video_paths),
+            max_questions=max_questions,
+        )
+        questions.append(next_question.question)
+        metadata.append(question_metadata(next_question))
+
+    interview.questions = json.dumps(questions)
+    interview.question_metadata = json.dumps(metadata)
     interview.video_paths = json.dumps(video_paths)
+    interview.transcripts = json.dumps(transcripts)
     interview.status = (
         "Ready to Submit"
-        if len(video_paths) == len(questions)
+        if len(video_paths) == max_questions
         else "In Progress"
     )
     company_interviews.save(interview)
 
-    if previous_path and previous_path != stored_path:
-        previous_path.unlink(missing_ok=True)
-
     return CompanyVideoAnswerResponse(
-        message="Video answer saved successfully.",
+        message=(
+            "Answer transcribed. The next adaptive question is ready."
+            if interview.status == "In Progress"
+            else "All answers were transcribed and saved successfully."
+        ),
         interview_id=interview.id,
         question_index=question_index,
+        questions=questions,
+        next_question_index=(
+            len(video_paths) if interview.status == "In Progress" else None
+        ),
         recorded_question_indexes=sorted(int(index) for index in video_paths),
         status=interview.status,
     )
@@ -268,7 +433,7 @@ async def upload_company_video_answer(
     response_model=CompanyInterviewSubmissionResponse,
 )
 def submit_company_interview(interview_id: int):
-    """Transcribe, evaluate, and save the private company-interview result."""
+    """Evaluate saved transcripts and store the private recruiter result."""
     interview = company_interviews.get(interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Company interview not found.")
@@ -276,11 +441,35 @@ def submit_company_interview(interview_id: int):
     application, student, job = get_interview_context(interview)
     questions = json.loads(interview.questions)
     video_paths = json.loads(interview.video_paths or "{}")
-    if len(video_paths) != len(questions):
+    transcripts = json.loads(interview.transcripts or "[]")
+    max_questions = interview.max_questions or len(questions)
+    if (
+        len(video_paths) != max_questions
+        or len(questions) != max_questions
+        or len(transcripts) != max_questions
+        or any(not transcript.strip() for transcript in transcripts)
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Record all five answers before submitting the interview.",
+            detail=(
+                f"Record and transcribe all {max_questions} answers before "
+                "submitting the interview."
+            ),
         )
+    try:
+        require_verified_identity_enrollment(student)
+        require_verified_recording_checks(
+            student_id=student.id,
+            stage="company_interview",
+            interview_id=interview.id,
+            introduction_id=student.self_introduction_id,
+            question_count=len(questions),
+        )
+    except IdentityContinuityError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
 
     if interview.analysis_status == "Completed":
         return CompanyInterviewSubmissionResponse(
@@ -290,10 +479,20 @@ def submit_company_interview(interview_id: int):
             message="The company interview was already submitted for recruiter review.",
         )
 
-    required_skills = set(split_requirements(job.required_skills))
+    required_skills_value = (
+        ", ".join(json.loads(interview.required_skills_snapshot or "[]"))
+        if interview.required_skills_snapshot
+        else job.required_skills
+    )
+    job_description = (
+        interview.job_description_snapshot
+        or job.job_description
+        or job.job_title
+    )
+    required_skills = set(split_requirements(required_skills_value))
     description_keywords = {
         word.lower()
-        for word in re.findall(r"[a-zA-Z][a-zA-Z+#.-]{2,}", job.job_description or "")
+        for word in re.findall(r"[a-zA-Z][a-zA-Z+#.-]{2,}", job_description)
     }
     evaluation_keywords = required_skills | description_keywords
 
@@ -302,10 +501,6 @@ def submit_company_interview(interview_id: int):
         interview.analysis_error = None
         company_interviews.save(interview)
 
-        transcripts = transcribe_recordings(
-            video_paths=video_paths,
-            question_count=len(questions),
-        )
         evaluation = evaluate_transcripts(
             student=student,
             questions=questions,
@@ -368,10 +563,17 @@ def get_recruiter_interview_result(interview_id: int):
     if not interview:
         raise HTTPException(status_code=404, detail="Company interview not found.")
     if interview.analysis_status != "Completed" or not interview.ai_evaluation:
-        raise HTTPException(
-            status_code=404,
-            detail="The company interview has not been analyzed yet.",
+        completed_interview = (
+            company_interviews.latest_completed_for_application(
+                interview.application_id
+            )
         )
+        if not completed_interview:
+            raise HTTPException(
+                status_code=404,
+                detail="The company interview has not been analyzed yet.",
+            )
+        interview = completed_interview
     return RecruiterInterviewResult(
         interview_id=interview.id,
         application_id=interview.application_id,

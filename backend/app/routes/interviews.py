@@ -12,7 +12,18 @@ from ..ai_interview_service import (
     evaluate_transcripts,
     transcribe_recordings,
 )
-from ..models import Doc, mock_interviews, students
+from ..identity_workflow import (
+    IdentityContinuityError,
+    require_verified_identity_enrollment,
+    require_verified_recording_checks,
+    verify_interview_recording_identity,
+)
+from ..media_uploads import (
+    EmptyUploadError,
+    UploadTooLargeError,
+    stream_upload_to_path,
+)
+from ..models import Doc, mock_interviews, self_introductions, students
 from ..role_profiles import get_role_profile
 
 
@@ -63,6 +74,18 @@ def generate_mock_questions(student: Doc) -> list[str]:
     primary_skill = skills[0] if skills else "your strongest technical skill"
     target_role = student.target_role or "your preferred role"
     role_profile = get_role_profile(student.target_role or "")
+    introduction = self_introductions.latest_for_student(student.id)
+    extracted_profile = (
+        introduction.extracted_profile
+        if introduction and isinstance(introduction.extracted_profile, dict)
+        else {}
+    )
+    project_highlights = extracted_profile.get("project_highlights", [])
+    project_context = (
+        str(project_highlights[0])[:220]
+        if project_highlights
+        else "the project you described in your self-introduction"
+    )
     # Two questions come from the shared role catalogue.
     role_questions = (
         role_profile["interview_questions"]
@@ -74,8 +97,14 @@ def generate_mock_questions(student: Doc) -> list[str]:
     )
 
     return [
-        f"Tell me about yourself, your education, and why you want to pursue opportunities in {target_role}.",
-        "Explain your most important project. What problem did it solve, and what was your contribution?",
+        (
+            f"You mentioned “{project_context}”. Explain the problem, your exact "
+            "contribution, one difficult decision, and the result."
+        ),
+        (
+            f"Why does your background make you a good candidate for {target_role}? "
+            "Use evidence that was not already covered in your introduction."
+        ),
         f"How have you used {primary_skill} in a project? Explain one technical decision you made.",
         role_questions[0],
         role_questions[1],
@@ -115,6 +144,13 @@ def start_mock_interview(student_id: int):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Select a supported target job role before starting the mock interview.",
         )
+    try:
+        require_verified_identity_enrollment(student)
+    except IdentityContinuityError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
 
     interview = mock_interviews.create(
         {
@@ -147,7 +183,7 @@ def get_mock_interview(interview_id: int):
     "/{interview_id}/answers/{question_index}",
     response_model=VideoAnswerResponse,
 )
-async def upload_video_answer(
+def upload_video_answer(
     interview_id: int,
     question_index: int,
     video: UploadFile = File(...),
@@ -174,25 +210,45 @@ async def upload_video_answer(
             detail="Only WebM, MP4, or MOV video answers are supported.",
         )
 
-    # Read the uploaded recording and reject empty or oversized files.
-    video_bytes = await video.read()
-    if not video_bytes:
+    # Each interview receives its own folder containing five answer files.
+    interview_directory = INTERVIEW_UPLOAD_DIR / f"mock-{interview.id}"
+    stored_filename = f"question-{question_index + 1}-{uuid4().hex}{extension}"
+    stored_path = interview_directory / stored_filename
+    try:
+        stream_upload_to_path(
+            video,
+            stored_path,
+            max_size=MAX_VIDEO_SIZE,
+        )
+    except EmptyUploadError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The recorded video is empty.",
-        )
-    if len(video_bytes) > MAX_VIDEO_SIZE:
+        ) from error
+    except UploadTooLargeError as error:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Each video answer must be 100 MB or smaller.",
-        )
+        ) from error
 
-    # Each interview receives its own folder containing five answer files.
-    interview_directory = INTERVIEW_UPLOAD_DIR / f"mock-{interview.id}"
-    interview_directory.mkdir(parents=True, exist_ok=True)
-    stored_filename = f"question-{question_index + 1}-{uuid4().hex}{extension}"
-    stored_path = interview_directory / stored_filename
-    stored_path.write_bytes(video_bytes)
+    student = students.get(interview.student_id)
+    if not student:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=404, detail="Student profile not found.")
+    try:
+        verify_interview_recording_identity(
+            student=student,
+            video_path=stored_path,
+            stage="mock_interview",
+            interview_id=interview.id,
+            question_index=question_index,
+        )
+    except IdentityContinuityError as error:
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
 
     # Update the JSON mapping: question index -> saved video path.
     video_paths = json.loads(interview.video_paths or "{}")
@@ -243,6 +299,22 @@ def analyze_mock_interview(interview_id: int):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Student profile not found.",
         )
+    questions = json.loads(interview.questions)
+    video_paths = json.loads(interview.video_paths or "{}")
+    try:
+        require_verified_identity_enrollment(student)
+        require_verified_recording_checks(
+            student_id=student.id,
+            stage="mock_interview",
+            interview_id=interview.id,
+            introduction_id=student.self_introduction_id,
+            question_count=len(questions),
+        )
+    except IdentityContinuityError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
 
     # Reuse a completed result instead of charging for the same analysis twice.
     if interview.analysis_status == "Completed" and interview.ai_evaluation:
@@ -254,9 +326,6 @@ def analyze_mock_interview(interview_id: int):
                 interview.ai_evaluation
             ),
         )
-
-    questions = json.loads(interview.questions)
-    video_paths = json.loads(interview.video_paths or "{}")
 
     try:
         interview.analysis_status = "Processing"

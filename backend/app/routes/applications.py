@@ -529,7 +529,10 @@ def get_job_applications(job_id: int):
         student = students_by_id.get(application.student_id)
         if not student:
             continue
-        company_interview = company_interviews.latest_for_application(application.id)
+        company_interview = (
+            company_interviews.latest_completed_for_application(application.id)
+            or company_interviews.latest_for_application(application.id)
+        )
         responses.append(
             build_response(
                 application,
@@ -592,7 +595,10 @@ def save_recruiter_decision(
     application.recommendation = f"Recruiter decision: {payload.decision}."
     applications.save(application)
 
-    company_interview = company_interviews.latest_for_application(application.id)
+    company_interview = (
+        company_interviews.latest_completed_for_application(application.id)
+        or company_interviews.latest_for_application(application.id)
+    )
     return build_response(
         application,
         student,

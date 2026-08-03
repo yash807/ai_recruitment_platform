@@ -114,6 +114,11 @@ def get_local_whisper_model() -> Any:
 def transcribe_recordings(
     video_paths: dict[str, str],
     question_count: int,
+    *,
+    beam_size: int = 1,
+    vad_filter: bool = True,
+    condition_on_previous_text: bool = True,
+    temperature: float = 0.0,
 ) -> list[str]:
     """Transcribe WebM recordings locally; no interview data leaves the Mac."""
     try:
@@ -130,8 +135,10 @@ def transcribe_recordings(
             segments, _ = model.transcribe(
                 str(video_path),
                 language="en",
-                beam_size=1,
-                vad_filter=True,
+                beam_size=beam_size,
+                vad_filter=vad_filter,
+                condition_on_previous_text=condition_on_previous_text,
+                temperature=temperature,
             )
             transcript = " ".join(
                 segment.text.strip() for segment in segments

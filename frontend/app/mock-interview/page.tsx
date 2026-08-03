@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-// All browser requests stay on the Next.js origin and are proxied to FastAPI.
+import { getBackendMediaUrl } from "../backend-media";
+
+// Small API calls use the Next.js proxy; video files upload directly to FastAPI.
 const API_URL = "/api";
 
 // Small student profile displayed before the interview starts.
@@ -200,8 +202,11 @@ export default function MockInterviewPage() {
       const uploadData = new FormData();
       uploadData.append("video", videoFile);
 
+      const uploadUrl = await getBackendMediaUrl(
+        `/mock-interviews/${interview.id}/answers/${currentQuestionIndex}`,
+      );
       const response = await fetch(
-        `${API_URL}/mock-interviews/${interview.id}/answers/${currentQuestionIndex}`,
+        uploadUrl,
         {
           method: "POST",
           body: uploadData,

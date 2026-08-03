@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,7 +7,15 @@ from pymongo.errors import PyMongoError
 
 from .models import ensure_indexes
 from .mongo import mongo_db
-from .routes import applications, college, company_interviews, interviews, jobs, students
+from .routes import (
+    applications,
+    college,
+    company_interviews,
+    interviews,
+    jobs,
+    self_introductions,
+    students,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +31,28 @@ except PyMongoError:
 # Create the main FastAPI backend application.
 app = FastAPI(title="AI Talent Intelligence Prototype")
 
-# Allow the local Next.js frontend to call this backend from the browser.
+# Video files are uploaded directly from the browser to avoid Vercel's
+# serverless request-size limit. Add any additional production/preview domains
+# to FRONTEND_ORIGINS as a comma-separated Render environment variable.
+configured_frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_ORIGINS", "").split(",")
+    if origin.strip()
+]
+frontend_origins = list(
+    dict.fromkeys(
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "https://ai-recruitment-platform-kappa.vercel.app",
+            *configured_frontend_origins,
+        ]
+    )
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://ai-recruitment-platform-kappa.vercel.app",
-    ],
+    allow_origins=frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,6 +60,7 @@ app.add_middleware(
 
 # Register APIs defined in separate route files.
 app.include_router(students.router)
+app.include_router(self_introductions.router)
 app.include_router(interviews.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)

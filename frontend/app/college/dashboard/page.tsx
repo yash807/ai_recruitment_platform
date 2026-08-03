@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
+import { checkBackendHealth } from "../../backend-health";
 import {
   COLLEGE_SESSION_KEY,
   CollegeIdentity,
@@ -68,16 +69,24 @@ export default function CollegeDashboardPage() {
       setIdentity(savedIdentity);
 
       try {
-        const [healthResponse, collegeResponse] = await Promise.all([
-          fetch(`${API_URL}/health`),
-          fetch(`${API_URL}/college/options`),
-        ]);
-        if (!healthResponse.ok || !collegeResponse.ok) {
+        await checkBackendHealth();
+        setBackendStatus("ok");
+      } catch (error) {
+        setBackendStatus("not connected");
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "The backend health check failed.",
+        );
+        return;
+      }
+
+      try {
+        const collegeResponse = await fetch(`${API_URL}/college/options`);
+        if (!collegeResponse.ok) {
           throw new Error("College data is not available.");
         }
-        const health = await healthResponse.json();
         const options: CollegeOption[] = await collegeResponse.json();
-        setBackendStatus(health.status);
         setColleges(options);
         const matchedCollege = savedIdentity.optionAliases
           .map((alias) =>
@@ -98,7 +107,6 @@ export default function CollegeDashboardPage() {
         setStudentLimit(String(matchedCollege.student_count));
         await fetchInsights(matchedCollege.name, matchedCollege.student_count);
       } catch (error) {
-        setBackendStatus("not connected");
         setMessage(
           error instanceof Error
             ? error.message

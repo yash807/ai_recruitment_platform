@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
+import { checkBackendHealth } from "../backend-health";
+
 // All browser requests stay on the Next.js origin and are proxied to FastAPI.
 const API_URL = "/api";
 
@@ -122,6 +124,12 @@ export default function RecruiterPage() {
   const [interviewResults, setInterviewResults] = useState<
     Record<number, RecruiterInterviewResult>
   >({});
+  const [loadingInterviewId, setLoadingInterviewId] = useState<number | null>(
+    null,
+  );
+  const [interviewErrors, setInterviewErrors] = useState<
+    Record<number, string>
+  >({});
   const [dashboardMessage, setDashboardMessage] = useState("");
   const [candidateMatches, setCandidateMatches] = useState<CandidateMatch[]>([]);
   const [matchesJobId, setMatchesJobId] = useState<number | null>(null);
@@ -141,12 +149,24 @@ export default function RecruiterPage() {
   useEffect(() => {
     async function loadPage() {
       try {
-        const healthResponse = await fetch(`${API_URL}/health`);
-        const health = await healthResponse.json();
-        setBackendStatus(health.status);
-        await loadJobs();
-      } catch {
+        await checkBackendHealth();
+        setBackendStatus("ok");
+      } catch (error) {
         setBackendStatus("not connected");
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "The backend health check failed.",
+        );
+        return;
+      }
+
+      try {
+        await loadJobs();
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "Could not load jobs.",
+        );
       }
     }
 
@@ -327,11 +347,27 @@ export default function RecruiterPage() {
   async function loadInterviewResult(applicant: Applicant) {
     if (!applicant.company_interview_id) return;
     setDashboardMessage("");
+    setLoadingInterviewId(applicant.id);
+    setInterviewErrors((current) => {
+      const next = { ...current };
+      delete next[applicant.id];
+      return next;
+    });
     try {
       const response = await fetch(
         `${API_URL}/company-interviews/${applicant.company_interview_id}/recruiter-result`,
       );
-      const result = await response.json();
+      const responseText = await response.text();
+      let result: RecruiterInterviewResult & { detail?: string };
+      try {
+        result = JSON.parse(responseText) as RecruiterInterviewResult & {
+          detail?: string;
+        };
+      } catch {
+        throw new Error(
+          responseText || "The backend returned an invalid interview result.",
+        );
+      }
       if (!response.ok) {
         throw new Error(result.detail || "Could not load the interview result.");
       }
@@ -340,11 +376,15 @@ export default function RecruiterPage() {
         [applicant.id]: result,
       }));
     } catch (error) {
-      setDashboardMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load the interview result.",
-      );
+      setInterviewErrors((current) => ({
+        ...current,
+        [applicant.id]:
+          error instanceof Error
+            ? error.message
+            : "Could not load the interview result.",
+      }));
+    } finally {
+      setLoadingInterviewId(null);
     }
   }
 
@@ -897,6 +937,8 @@ export default function RecruiterPage() {
             ) : (
               applicants.map((applicant) => {
                 const interviewResult = interviewResults[applicant.id];
+                const interviewError = interviewErrors[applicant.id];
+                const loadingInterview = loadingInterviewId === applicant.id;
                 const interviewComplete = applicant.company_interview_score > 0;
                 const finalDecision = [
                   "Shortlisted",
@@ -989,13 +1031,22 @@ export default function RecruiterPage() {
                     {applicant.company_interview_id && interviewComplete && (
                       <button
                         className="mt-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-100"
+                        disabled={loadingInterview}
                         onClick={() => void loadInterviewResult(applicant)}
                         type="button"
                       >
-                        {interviewResult
-                          ? "Refresh interview result"
-                          : "View interview evaluation and transcripts"}
+                        {loadingInterview
+                          ? "Loading interview evaluation..."
+                          : interviewResult
+                            ? "Refresh interview result"
+                            : "View interview evaluation and transcripts"}
                       </button>
+                    )}
+
+                    {interviewError && (
+                      <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {interviewError}
+                      </p>
                     )}
 
                     {interviewResult && (

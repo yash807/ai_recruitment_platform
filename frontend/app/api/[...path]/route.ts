@@ -1,7 +1,6 @@
-const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+const LOCAL_BACKEND_URL = "http://127.0.0.1:8000";
 
-type RouteParameters = {
-  params: Promise<{ path: string[] }>;
+type RouteParameters = {params: Promise<{ path: string[] }>;
 };
 
 const REQUEST_HEADERS_TO_REMOVE = [
@@ -12,9 +11,36 @@ const REQUEST_HEADERS_TO_REMOVE = [
 ];
 
 async function forwardRequest(request: Request, context: RouteParameters) {
+  const backendUrl =
+    process.env.BACKEND_URL?.trim() ||
+    (process.env.NODE_ENV === "development" ? LOCAL_BACKEND_URL : "");
+
+  if (!backendUrl) {
+    return Response.json(
+      {
+        detail:
+          "BACKEND_URL is not configured for this deployment.",
+      },
+      { status: 503 },
+    );
+  }
+
   const { path } = await context.params;
   const incomingUrl = new URL(request.url);
-  const targetUrl = new URL(path.map(encodeURIComponent).join("/"), `${BACKEND_URL}/`);
+  let targetUrl: URL;
+
+  try {
+    targetUrl = new URL(
+      path.map(encodeURIComponent).join("/"),
+      `${backendUrl.replace(/\/+$/, "")}/`,
+    );
+  } catch {
+    return Response.json(
+      { detail: "BACKEND_URL is not a valid HTTP address." },
+      { status: 503 },
+    );
+  }
+
   targetUrl.search = incomingUrl.search;
 
   const headers = new Headers(request.headers);
@@ -45,7 +71,7 @@ async function forwardRequest(request: Request, context: RouteParameters) {
     return Response.json(
       {
         detail:
-          "The backend is not reachable. Start FastAPI on port 8000, then retry.",
+          "The backend is not reachable. Verify BACKEND_URL and the FastAPI service.",
       },
       { status: 503 },
     );

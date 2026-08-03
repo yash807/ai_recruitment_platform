@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { checkBackendHealth } from "../../backend-health";
+
 const API_URL = "/api";
 
 const TARGET_ROLES = [
@@ -25,6 +27,8 @@ type Student = {
   resume_score: number;
   role_match_score: number;
   mock_interview_score: number;
+  self_introduction_status?: string | null;
+  identity_enrollment_status?: string | null;
 };
 
 type ResumeResult = {
@@ -115,14 +119,22 @@ export default function StudentDashboard() {
 
     async function initialize() {
       try {
-        const healthResponse = await fetch(`${API_URL}/health`);
-        if (!healthResponse.ok) throw new Error("Backend unavailable.");
-        const health = await healthResponse.json();
+        await checkBackendHealth();
         setStudentId(resolvedStudentId);
-        setBackendStatus(health.status);
-        await loadDashboard(resolvedStudentId);
+        setBackendStatus("ok");
       } catch (error) {
         setBackendStatus("not connected");
+        setPageMessage(
+          error instanceof Error
+            ? error.message
+            : "The backend health check failed.",
+        );
+        return;
+      }
+
+      try {
+        await loadDashboard(resolvedStudentId);
+      } catch (error) {
         setPageMessage(
           error instanceof Error
             ? error.message
@@ -218,22 +230,55 @@ export default function StudentDashboard() {
   }
 
   function openMockInterview() {
-    if (mockInterviewReady && studentId) {
+    if (!resumeReady) {
+      setResumeMessage(
+        "Analyze your resume first to unlock the self-introduction.",
+      );
+      document
+        .getElementById("resume-analysis")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (!studentId) return;
+    router.push(
+      selfIntroductionReady
+        ? `/mock-interview?student_id=${studentId}`
+        : `/self-introduction?student_id=${studentId}`,
+    );
+  }
+
+  function openSelfIntroduction() {
+    if (selfIntroductionReady && studentId) {
       router.push(`/mock-interview?student_id=${studentId}`);
       return;
     }
-    setResumeMessage(
-      "Analyze your resume first to unlock the mock interview.",
-    );
-    document
-      .getElementById("resume-analysis")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!resumeReady) {
+      setResumeMessage(
+        "Analyze your resume first to unlock the self-introduction.",
+      );
+      document
+        .getElementById("resume-analysis")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (studentId) {
+      router.push(`/self-introduction?student_id=${studentId}`);
+    }
   }
 
   const applicationForJob = (jobId: number) =>
     applications.find((application) => application.job_id === jobId);
-  const mockInterviewReady =
+  const resumeReady =
     Boolean(student?.target_role) && (student?.resume_score || 0) > 0;
+  const selfIntroductionCompleted = ["completed", "complete"].includes(
+    (student?.self_introduction_status || "").toLowerCase(),
+  );
+  const identityEnrollmentVerified = ["verified", "completed", "enrolled"].includes(
+    (student?.identity_enrollment_status || "").toLowerCase(),
+  );
+  const selfIntroductionReady =
+    selfIntroductionCompleted && identityEnrollmentVerified;
 
   return (
     <main className="surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
@@ -301,12 +346,23 @@ export default function StudentDashboard() {
           </div>
         </header>
 
-        <section className="mt-7 grid gap-4 md:grid-cols-3">
+        <section className="mt-7 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Link
             className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href="#resume-analysis"
           >
-            <span className="text-xs font-black text-indigo-600">01</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-black text-indigo-600">01</span>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                  resumeReady
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {resumeReady ? "Complete" : "Required"}
+              </span>
+            </div>
             <h2 className="mt-3 font-extrabold">Analyze resume</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
               Choose your target role and upload a PDF.
@@ -315,15 +371,61 @@ export default function StudentDashboard() {
 
           <button
             className="glass-card rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            onClick={openSelfIntroduction}
+            type="button"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-black text-indigo-600">02</span>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                  selfIntroductionReady
+                    ? "bg-emerald-50 text-emerald-700"
+                    : resumeReady
+                      ? "bg-indigo-50 text-indigo-700"
+                      : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {selfIntroductionReady
+                  ? "Verified"
+                  : resumeReady
+                    ? "Ready"
+                    : "Locked"}
+              </span>
+            </div>
+            <h2 className="mt-3 font-extrabold">Self-introduction</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              {selfIntroductionReady
+                ? "Your introduction and identity reference are complete."
+                : resumeReady
+                  ? "Record a 60–90 second introduction and identity check."
+                  : "Analyze a resume to unlock this required step."}
+            </p>
+          </button>
+
+          <button
+            className="glass-card rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             onClick={openMockInterview}
             type="button"
           >
-            <span className="text-xs font-black text-indigo-600">02</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-black text-indigo-600">03</span>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                  selfIntroductionReady
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {selfIntroductionReady ? "Unlocked" : "Locked"}
+              </span>
+            </div>
             <h2 className="mt-3 font-extrabold">Mock interview</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              {mockInterviewReady
+              {selfIntroductionReady
                 ? `Start your ${student?.target_role} practice interview.`
-                : "Analyze a resume to unlock interview practice."}
+                : resumeReady
+                  ? "Complete your self-introduction to unlock practice."
+                  : "Analyze a resume to begin the interview journey."}
             </p>
           </button>
 
@@ -331,7 +433,7 @@ export default function StudentDashboard() {
             className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href="#companies"
           >
-            <span className="text-xs font-black text-indigo-600">03</span>
+            <span className="text-xs font-black text-indigo-600">04</span>
             <h2 className="mt-3 font-extrabold">Browse companies</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
               Explore roles and apply using your profile.
@@ -552,9 +654,15 @@ export default function StudentDashboard() {
                           ].includes(application.status) && (
                             <Link
                               className="mt-3 inline-flex w-full justify-center rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700"
-                              href={`/company-interview?application_id=${application.id}`}
+                              href={
+                                selfIntroductionReady
+                                  ? `/company-interview?application_id=${application.id}`
+                                  : `/self-introduction?student_id=${studentId}`
+                              }
                             >
-                              Start company AI interview
+                              {selfIntroductionReady
+                                ? "Start company AI interview"
+                                : "Complete self-introduction first"}
                             </Link>
                           )}
                       </div>

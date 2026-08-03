@@ -185,6 +185,9 @@ class StudentResponse(BaseModel):
     role_match_score: float
     mock_interview_score: float
     ai_profile_summary: str | None = None
+    self_introduction_id: int | None = None
+    self_introduction_status: str = "Not Started"
+    identity_enrollment_status: str = "Not Started"
 
 
 # Complete result returned after a resume is uploaded and analyzed.
