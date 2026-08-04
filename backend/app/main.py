@@ -36,7 +36,7 @@ app = FastAPI(title="AI Talent Intelligence Prototype")
 # to FRONTEND_ORIGINS as a comma-separated Render environment variable.
 configured_frontend_origins = [
     origin.strip().rstrip("/")
-    for origin in os.getenv("FRONTEND_ORIGINS", "").split(",")
+    for origin in os.getenv("FRONTEND_ORIGIN", "").split(",")
     if origin.strip()
 ]
 frontend_origins = list(
