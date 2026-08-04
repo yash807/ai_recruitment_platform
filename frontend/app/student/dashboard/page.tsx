@@ -126,9 +126,16 @@ function StudentDashboardContent() {
     const storedStudentId = Number(
       window.sessionStorage.getItem("studentId"),
     );
-    const resolvedStudentId = queryStudentId || storedStudentId;
+    // A successful sign-in or registration updates sessionStorage before
+    // navigating. Prefer that authenticated profile over a stale dashboard URL
+    // restored from browser history.
+    const resolvedStudentId = storedStudentId || queryStudentId;
     if (!resolvedStudentId) {
       router.replace("/student");
+      return;
+    }
+    if (queryStudentId !== resolvedStudentId) {
+      router.replace(`/student/dashboard?student_id=${resolvedStudentId}`);
       return;
     }
 
