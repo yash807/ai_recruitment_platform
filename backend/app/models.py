@@ -211,6 +211,20 @@ class MockInterviewRepository(MongoRepository):
         "overall_score": 0,
     }
 
+    def latest_completed_for_student(self, student_id: int) -> Doc | None:
+        documents = list(
+            self.collection.find(
+                {
+                    "student_id": student_id,
+                    "analysis_status": "Completed",
+                    "ai_evaluation": {"$nin": [None, ""]},
+                }
+            )
+            .sort("id", DESCENDING)
+            .limit(1)
+        )
+        return _wrap(documents[0]) if documents else None
+
 
 class SelfIntroductionRepository(MongoRepository):
     collection_name = "self_introductions"

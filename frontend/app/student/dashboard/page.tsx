@@ -81,6 +81,30 @@ type ApplicationResult = {
   result_feedback: string | null;
 };
 
+type MockInterviewResult = {
+  interview_id: number;
+  analysis_status: string;
+  evaluation: {
+    target_role: string;
+    technical_score: number;
+    communication_score: number;
+    problem_solving_score: number;
+    project_understanding_score: number;
+    role_readiness_score: number;
+    overall_score: number;
+    strengths: string[];
+    improvement_areas: string[];
+    improvement_plan: string[];
+    summary: string;
+  };
+};
+
+type CompanyInterviewResult = MockInterviewResult & {
+  application_id: number;
+  company_name: string;
+  job_title: string;
+};
+
 function StudentDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -88,6 +112,13 @@ function StudentDashboardContent() {
   const [student, setStudent] = useState<Student | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<ApplicationResult[]>([]);
+  const [mockInterviewResult, setMockInterviewResult] =
+    useState<MockInterviewResult | null>(null);
+  const [companyInterviewResults, setCompanyInterviewResults] = useState<
+    CompanyInterviewResult[]
+  >([]);
+  const [selectedCompanyInterviewResult, setSelectedCompanyInterviewResult] =
+    useState<CompanyInterviewResult | null>(null);
   const [backendStatus, setBackendStatus] = useState("checking...");
   const [pageMessage, setPageMessage] = useState("");
 
@@ -101,24 +132,52 @@ function StudentDashboardContent() {
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
 
   const loadDashboard = useCallback(async (id: number, signal?: AbortSignal) => {
-    const [studentResponse, jobsResponse, applicationsResponse] =
+    const [
+      studentResponse,
+      jobsResponse,
+      applicationsResponse,
+      mockInterviewResultResponse,
+      companyInterviewResultsResponse,
+    ] =
       await Promise.all([
         fetch(`${API_URL}/students/${id}`, { signal }),
         fetch(`${API_URL}/jobs`, { signal }),
         fetch(`${API_URL}/applications/student/${id}`, { signal }),
+        fetch(`${API_URL}/mock-interviews/latest-analysis/student/${id}`, {
+          signal,
+          cache: "no-store",
+        }),
+        fetch(`${API_URL}/company-interviews/student/${id}/published-results`, {
+          signal,
+          cache: "no-store",
+        }),
       ]);
     if (!studentResponse.ok) {
       throw new Error("Could not load the student profile.");
     }
-    const [studentData, jobData, applicationData]: [
+    const [
+      studentData,
+      jobData,
+      applicationData,
+      mockInterviewResultData,
+      companyInterviewResultsData,
+    ]: [
       Student,
       Job[],
       ApplicationResult[],
+      MockInterviewResult | null,
+      CompanyInterviewResult[],
     ] = await Promise.all([
       studentResponse.json(),
       jobsResponse.ok ? jobsResponse.json() : Promise.resolve([]),
       applicationsResponse.ok
         ? applicationsResponse.json()
+        : Promise.resolve([]),
+      mockInterviewResultResponse.ok
+        ? mockInterviewResultResponse.json()
+        : Promise.resolve(null),
+      companyInterviewResultsResponse.ok
+        ? companyInterviewResultsResponse.json()
         : Promise.resolve([]),
     ]);
     signal?.throwIfAborted();
@@ -126,6 +185,8 @@ function StudentDashboardContent() {
     setTargetRole(studentData.target_role || "");
     setJobs(jobData);
     setApplications(applicationData);
+    setMockInterviewResult(mockInterviewResultData);
+    setCompanyInterviewResults(companyInterviewResultsData);
     return studentData;
   }, []);
 
@@ -159,6 +220,9 @@ function StudentDashboardContent() {
       setStudent(null);
       setJobs([]);
       setApplications([]);
+      setMockInterviewResult(null);
+      setCompanyInterviewResults([]);
+      setSelectedCompanyInterviewResult(null);
       setTargetRole("");
       setResumeFile(null);
       setResumeResult(null);
@@ -560,17 +624,25 @@ function StudentDashboardContent() {
               <span className="text-xs font-black text-indigo-600">03</span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
-                  selfIntroductionReady
+                  mockInterviewResult
+                    ? "bg-cyan-50 text-cyan-700"
+                    : selfIntroductionReady
                     ? "bg-emerald-50 text-emerald-700"
                     : "bg-slate-100 text-slate-500"
                 }`}
               >
-                {selfIntroductionReady ? "Unlocked" : "Locked"}
+                {mockInterviewResult
+                  ? "Result ready"
+                  : selfIntroductionReady
+                    ? "Unlocked"
+                    : "Locked"}
               </span>
             </div>
             <h2 className="mt-3 font-extrabold">Mock interview</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              {selfIntroductionReady
+              {mockInterviewResult
+                ? "Your latest published result is shown below."
+                : selfIntroductionReady
                 ? `Start your ${student?.target_role} practice interview.`
                 : resumeReady
                   ? "Complete your self-introduction to unlock practice."
@@ -589,6 +661,246 @@ function StudentDashboardContent() {
             </p>
           </Link>
         </section>
+
+        {mockInterviewResult && (
+          <section
+            className="mt-7 overflow-hidden rounded-3xl bg-slate-950 text-white shadow-2xl shadow-slate-300/60"
+            id="mock-interview-result"
+          >
+            <div className="grid gap-6 bg-gradient-to-br from-indigo-950/80 to-slate-950 px-6 py-7 sm:px-8 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-indigo-300">
+                    Published mock-interview result
+                  </p>
+                  <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-300 ring-1 ring-emerald-400/20">
+                    Available to you
+                  </span>
+                </div>
+                <h2 className="mt-3 text-2xl font-black sm:text-3xl">
+                  {mockInterviewResult.evaluation.target_role}
+                </h2>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+                  {mockInterviewResult.evaluation.summary}
+                </p>
+                <p className="mt-3 text-xs text-slate-500">
+                  Interview #{mockInterviewResult.interview_id}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/10 px-7 py-5 text-center ring-1 ring-white/15">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Overall score
+                </p>
+                <p className="mt-1 text-5xl font-black text-cyan-300">
+                  {mockInterviewResult.evaluation.overall_score}
+                </p>
+                <p className="text-xs text-slate-400">out of 100</p>
+              </div>
+            </div>
+
+            <div className="px-6 pb-8 sm:px-8">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  ["Technical", mockInterviewResult.evaluation.technical_score],
+                  [
+                    "Communication",
+                    mockInterviewResult.evaluation.communication_score,
+                  ],
+                  [
+                    "Problem solving",
+                    mockInterviewResult.evaluation.problem_solving_score,
+                  ],
+                  [
+                    "Project knowledge",
+                    mockInterviewResult.evaluation.project_understanding_score,
+                  ],
+                  [
+                    "Role readiness",
+                    mockInterviewResult.evaluation.role_readiness_score,
+                  ],
+                ].map(([label, score]) => (
+                  <div
+                    className="rounded-2xl bg-white/[0.06] p-4 ring-1 ring-white/10"
+                    key={label}
+                  >
+                    <p className="text-xs text-slate-400">{label}</p>
+                    <p className="mt-2 text-2xl font-black">{score}/100</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                {[
+                  [
+                    "Strengths",
+                    mockInterviewResult.evaluation.strengths,
+                    "text-emerald-300",
+                  ],
+                  [
+                    "Areas to improve",
+                    mockInterviewResult.evaluation.improvement_areas,
+                    "text-amber-300",
+                  ],
+                  [
+                    "Action plan",
+                    mockInterviewResult.evaluation.improvement_plan,
+                    "text-cyan-300",
+                  ],
+                ].map(([title, items, tone]) => (
+                  <div
+                    className="rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/10"
+                    key={title as string}
+                  >
+                    <h3 className={`font-black ${tone}`}>{title as string}</h3>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
+                      {(items as string[]).map((item) => (
+                        <li className="flex gap-2" key={item}>
+                          <span className="text-slate-500">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {selectedCompanyInterviewResult && (
+          <>
+            <button
+              aria-label="Close company interview result"
+              className="fixed inset-0 z-40 cursor-default bg-slate-950/70 backdrop-blur-sm"
+              onClick={() => setSelectedCompanyInterviewResult(null)}
+              type="button"
+            />
+            <section
+              aria-labelledby="company-interview-result-title"
+              aria-modal="true"
+              className="fixed inset-0 z-50 overflow-y-auto px-4 py-8 sm:px-6"
+              role="dialog"
+            >
+              <div className="mx-auto max-w-5xl">
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-2xl bg-white px-5 py-4 shadow-xl">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-700">
+                  Published company interview result
+                </p>
+                <h2
+                  className="mt-2 text-2xl font-black"
+                  id="company-interview-result-title"
+                >
+                  Your company interview feedback
+                </h2>
+              </div>
+                  <button
+                    aria-label="Close company interview result"
+                    className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-xl font-bold text-slate-600 hover:bg-slate-200"
+                    onClick={() => setSelectedCompanyInterviewResult(null)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+            </div>
+
+            <div className="space-y-5">
+              {[selectedCompanyInterviewResult].map((result) => (
+                <article
+                  className="overflow-hidden rounded-3xl bg-slate-950 text-white shadow-2xl shadow-slate-300/60"
+                  key={result.interview_id}
+                >
+                  <div className="grid gap-6 bg-gradient-to-br from-emerald-950/80 to-slate-950 px-6 py-7 sm:px-8 lg:grid-cols-[1fr_auto] lg:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-300 ring-1 ring-emerald-400/20">
+                          Published to you
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          Interview #{result.interview_id}
+                        </span>
+                      </div>
+                      <p className="mt-4 text-sm font-bold uppercase tracking-wider text-emerald-300">
+                        {result.company_name}
+                      </p>
+                      <h3 className="mt-1 text-2xl font-black sm:text-3xl">
+                        {result.job_title}
+                      </h3>
+                      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+                        {result.evaluation.summary}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 px-7 py-5 text-center ring-1 ring-white/15">
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                        Overall score
+                      </p>
+                      <p className="mt-1 text-5xl font-black text-emerald-300">
+                        {result.evaluation.overall_score}
+                      </p>
+                      <p className="text-xs text-slate-400">out of 100</p>
+                    </div>
+                  </div>
+
+                  <div className="px-6 pb-8 sm:px-8">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                      {[
+                        ["Technical", result.evaluation.technical_score],
+                        ["Communication", result.evaluation.communication_score],
+                        ["Problem solving", result.evaluation.problem_solving_score],
+                        [
+                          "Project knowledge",
+                          result.evaluation.project_understanding_score,
+                        ],
+                        ["Role readiness", result.evaluation.role_readiness_score],
+                      ].map(([label, score]) => (
+                        <div
+                          className="rounded-2xl bg-white/[0.06] p-4 ring-1 ring-white/10"
+                          key={label}
+                        >
+                          <p className="text-xs text-slate-400">{label}</p>
+                          <p className="mt-2 text-2xl font-black">{score}/100</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                      {[
+                        ["Strengths", result.evaluation.strengths, "text-emerald-300"],
+                        [
+                          "Areas to improve",
+                          result.evaluation.improvement_areas,
+                          "text-amber-300",
+                        ],
+                        [
+                          "Action plan",
+                          result.evaluation.improvement_plan,
+                          "text-cyan-300",
+                        ],
+                      ].map(([title, items, tone]) => (
+                        <div
+                          className="rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/10"
+                          key={title as string}
+                        >
+                          <h4 className={`font-black ${tone}`}>{title as string}</h4>
+                          <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
+                            {(items as string[]).map((item) => (
+                              <li className="flex gap-2" key={item}>
+                                <span className="text-slate-500">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+              </div>
+            </section>
+          </>
+        )}
 
         <section
           className="glass-card mt-7 scroll-mt-6 rounded-3xl border border-white p-6 shadow-xl shadow-slate-200/60 sm:p-8"
@@ -744,6 +1056,11 @@ function StudentDashboardContent() {
             ) : (
               jobs.map((job) => {
                 const application = applicationForJob(job.id);
+                const publishedResult = application
+                  ? companyInterviewResults.find(
+                      (result) => result.application_id === application.id,
+                    )
+                  : null;
                 return (
                   <article
                     className="rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-sm"
@@ -814,6 +1131,17 @@ function StudentDashboardContent() {
                                 : "Complete self-introduction first"}
                             </Link>
                           )}
+                        {publishedResult && (
+                          <button
+                            className="mt-3 inline-flex w-full justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700"
+                            onClick={() =>
+                              setSelectedCompanyInterviewResult(publishedResult)
+                            }
+                            type="button"
+                          >
+                            View published interview result
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <button

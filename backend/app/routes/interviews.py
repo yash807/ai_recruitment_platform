@@ -410,3 +410,33 @@ def get_mock_interview_analysis(interview_id: int):
             interview.ai_evaluation
         ),
     )
+
+
+# Return the newest published mock-interview result for a student dashboard.
+@router.get(
+    "/latest-analysis/student/{student_id}",
+    response_model=InterviewAnalysisResponse,
+)
+def get_latest_student_mock_interview_analysis(student_id: int):
+    student = students.get(student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found.",
+        )
+
+    interview = mock_interviews.latest_completed_for_student(student_id)
+    if not interview:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No published mock-interview result was found.",
+        )
+
+    return InterviewAnalysisResponse(
+        interview_id=interview.id,
+        analysis_status=interview.analysis_status,
+        transcripts=json.loads(interview.transcripts or "[]"),
+        evaluation=InterviewEvaluation.model_validate_json(
+            interview.ai_evaluation
+        ),
+    )

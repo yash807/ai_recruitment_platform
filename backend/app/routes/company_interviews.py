@@ -86,6 +86,17 @@ class RecruiterInterviewResult(BaseModel):
     evaluation: InterviewEvaluation
 
 
+class StudentCompanyInterviewResult(BaseModel):
+    """Published AI feedback without recruiter-only or transcript data."""
+
+    interview_id: int
+    application_id: int
+    company_name: str
+    job_title: str
+    analysis_status: str
+    evaluation: InterviewEvaluation
+
+
 def get_max_questions() -> int:
     """Return a bounded interview length from local/Render configuration."""
     try:
@@ -582,3 +593,40 @@ def get_recruiter_interview_result(interview_id: int):
             interview.ai_evaluation
         ),
     )
+
+
+@router.get(
+    "/student/{student_id}/published-results",
+    response_model=list[StudentCompanyInterviewResult],
+)
+def get_student_company_interview_results(student_id: int):
+    """Return completed company interview feedback owned by the student."""
+    student = students.get(student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    student_applications = applications.list_by_student(student_id)
+    jobs_by_id = jobs.many_by_id(
+        application.job_id for application in student_applications
+    )
+    results: list[StudentCompanyInterviewResult] = []
+    for application in student_applications:
+        job = jobs_by_id.get(application.job_id)
+        interview = company_interviews.latest_completed_for_application(
+            application.id
+        )
+        if not job or not interview:
+            continue
+        results.append(
+            StudentCompanyInterviewResult(
+                interview_id=interview.id,
+                application_id=application.id,
+                company_name=job.company_name,
+                job_title=job.job_title,
+                analysis_status=interview.analysis_status,
+                evaluation=InterviewEvaluation.model_validate_json(
+                    interview.ai_evaluation
+                ),
+            )
+        )
+    return results
