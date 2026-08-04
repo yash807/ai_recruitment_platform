@@ -1,8 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import {
+  FormEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { checkBackendHealth } from "../../backend-health";
 
@@ -69,8 +75,9 @@ type ApplicationResult = {
   result_feedback: string | null;
 };
 
-export default function StudentDashboard() {
+function StudentDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [studentId, setStudentId] = useState<number | null>(null);
   const [student, setStudent] = useState<Student | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -85,29 +92,37 @@ export default function StudentDashboard() {
   const [uploadingResume, setUploadingResume] = useState(false);
   const [applyingJobId, setApplyingJobId] = useState<number | null>(null);
 
-  const loadDashboard = useCallback(async (id: number) => {
+  const loadDashboard = useCallback(async (id: number, signal?: AbortSignal) => {
     const [studentResponse, jobsResponse, applicationsResponse] =
       await Promise.all([
-        fetch(`${API_URL}/students/${id}`),
-        fetch(`${API_URL}/jobs`),
-        fetch(`${API_URL}/applications/student/${id}`),
+        fetch(`${API_URL}/students/${id}`, { signal }),
+        fetch(`${API_URL}/jobs`, { signal }),
+        fetch(`${API_URL}/applications/student/${id}`, { signal }),
       ]);
     if (!studentResponse.ok) {
       throw new Error("Could not load the student profile.");
     }
-    const studentData: Student = await studentResponse.json();
+    const [studentData, jobData, applicationData]: [
+      Student,
+      Job[],
+      ApplicationResult[],
+    ] = await Promise.all([
+      studentResponse.json(),
+      jobsResponse.ok ? jobsResponse.json() : Promise.resolve([]),
+      applicationsResponse.ok
+        ? applicationsResponse.json()
+        : Promise.resolve([]),
+    ]);
+    signal?.throwIfAborted();
     setStudent(studentData);
     setTargetRole(studentData.target_role || "");
-    setJobs(jobsResponse.ok ? await jobsResponse.json() : []);
-    setApplications(
-      applicationsResponse.ok ? await applicationsResponse.json() : [],
-    );
+    setJobs(jobData);
+    setApplications(applicationData);
+    return studentData;
   }, []);
 
   useEffect(() => {
-    const queryStudentId = Number(
-      new URLSearchParams(window.location.search).get("student_id"),
-    );
+    const queryStudentId = Number(searchParams.get("student_id"));
     const storedStudentId = Number(
       window.sessionStorage.getItem("studentId"),
     );
@@ -117,12 +132,31 @@ export default function StudentDashboard() {
       return;
     }
 
+    const controller = new AbortController();
+    let active = true;
+
     async function initialize() {
+      // A query-string navigation can reuse this component. Clear the previous
+      // profile before loading so its data and actions are never shown for the new ID.
+      await Promise.resolve();
+      if (!active) return;
+      setStudentId(resolvedStudentId);
+      setStudent(null);
+      setJobs([]);
+      setApplications([]);
+      setTargetRole("");
+      setResumeFile(null);
+      setResumeResult(null);
+      setResumeMessage("");
+      setPageMessage("");
+      setBackendStatus("checking...");
+
       try {
         await checkBackendHealth();
-        setStudentId(resolvedStudentId);
+        if (!active) return;
         setBackendStatus("ok");
       } catch (error) {
+        if (!active) return;
         setBackendStatus("not connected");
         setPageMessage(
           error instanceof Error
@@ -133,8 +167,17 @@ export default function StudentDashboard() {
       }
 
       try {
-        await loadDashboard(resolvedStudentId);
+        const loadedStudent = await loadDashboard(
+          resolvedStudentId,
+          controller.signal,
+        );
+        if (!active) return;
+        window.sessionStorage.setItem("studentId", String(loadedStudent.id));
+        window.sessionStorage.setItem("studentName", loadedStudent.name);
       } catch (error) {
+        if (!active || (error instanceof Error && error.name === "AbortError")) {
+          return;
+        }
         setPageMessage(
           error instanceof Error
             ? error.message
@@ -143,7 +186,12 @@ export default function StudentDashboard() {
       }
     }
     void initialize();
-  }, [loadDashboard, router]);
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [loadDashboard, router, searchParams]);
 
   async function handleResumeAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -692,5 +740,13 @@ export default function StudentDashboard() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function StudentDashboard() {
+  return (
+    <Suspense fallback={null}>
+      <StudentDashboardContent />
+    </Suspense>
   );
 }
