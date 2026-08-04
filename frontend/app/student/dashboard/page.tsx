@@ -29,10 +29,16 @@ type Student = {
   email: string;
   college: string | null;
   branch: string | null;
+  cgpa: number | null;
+  skills: string | null;
   target_role: string | null;
+  linkedin_url: string | null;
+  github_url: string | null;
+  leetcode_url: string | null;
   resume_score: number;
   role_match_score: number;
   mock_interview_score: number;
+  ai_profile_summary?: string | null;
   self_introduction_status?: string | null;
   identity_enrollment_status?: string | null;
 };
@@ -91,6 +97,8 @@ function StudentDashboardContent() {
   const [resumeMessage, setResumeMessage] = useState("");
   const [uploadingResume, setUploadingResume] = useState(false);
   const [applyingJobId, setApplyingJobId] = useState<number | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
 
   const loadDashboard = useCallback(async (id: number, signal?: AbortSignal) => {
     const [studentResponse, jobsResponse, applicationsResponse] =
@@ -199,6 +207,20 @@ function StudentDashboardContent() {
       controller.abort();
     };
   }, [loadDashboard, router, searchParams]);
+
+  useEffect(() => {
+    function closeProfileUi(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setProfileMenuOpen(false);
+        setProfilePanelOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeProfileUi);
+    return () => {
+      document.removeEventListener("keydown", closeProfileUi);
+    };
+  }, []);
 
   async function handleResumeAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -334,13 +356,19 @@ function StudentDashboardContent() {
   );
   const selfIntroductionReady =
     selfIntroductionCompleted && identityEnrollmentVerified;
+  const profileInitials = (student?.name || "Student")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 
   return (
     <main className="surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
       <div className="pointer-events-none absolute -left-32 top-32 h-96 w-96 rounded-full bg-indigo-200/50 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 top-[36rem] h-96 w-96 rounded-full bg-emerald-100/70 blur-3xl" />
       <div className="relative mx-auto max-w-6xl">
-        <nav className="glass-card mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
+        <nav className="glass-card relative z-30 mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
           <Link className="flex items-center gap-3" href="/">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-sm font-black text-white">
               AT
@@ -350,23 +378,89 @@ function StudentDashboardContent() {
               <p className="mt-1 text-xs text-slate-500">Student dashboard</p>
             </div>
           </Link>
-          <div className="flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                backendStatus === "ok"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
-              }`}
-            >
-              {backendStatus === "ok" ? "System online" : backendStatus}
-            </span>
+          <div className="relative">
             <button
-              className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100"
-              onClick={signOut}
+              aria-expanded={profileMenuOpen}
+              aria-haspopup="menu"
+              aria-label="Open profile menu"
+              className="flex items-center gap-3 rounded-xl px-2 py-1.5 text-left transition hover:bg-slate-100"
+              onClick={() => setProfileMenuOpen((open) => !open)}
               type="button"
             >
-              Sign out
+              <span className="relative grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-500 text-sm font-black text-white shadow-md shadow-indigo-200">
+                {profileInitials || "S"}
+                <span
+                  className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${
+                    backendStatus === "ok" ? "bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+              </span>
+              <span className="hidden sm:block">
+                <span className="block max-w-36 truncate text-sm font-bold text-slate-800">
+                  {student?.name || "Student"}
+                </span>
+                <span className="block text-xs text-slate-500">
+                  {backendStatus === "ok" ? "System online" : backendStatus}
+                </span>
+              </span>
+              <svg
+                aria-hidden="true"
+                className={`h-4 w-4 text-slate-400 transition ${
+                  profileMenuOpen ? "rotate-180" : ""
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="m7 10 5 5 5-5"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                />
+              </svg>
             </button>
+
+            {profileMenuOpen && (
+              <div
+                className="absolute right-0 top-[calc(100%+0.6rem)] z-40 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-300/60"
+                role="menu"
+              >
+                <div className="border-b border-slate-100 px-3 py-2.5">
+                  <p className="truncate text-sm font-bold text-slate-900">
+                    {student?.name || "Student"}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                    {student?.email || "Profile loading…"}
+                  </p>
+                </div>
+                <button
+                  className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                  onClick={() => {
+                    setProfileMenuOpen(false);
+                    setProfilePanelOpen(true);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-100 text-indigo-700">
+                    ◉
+                  </span>
+                  Profile
+                </button>
+                <button
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-50"
+                  onClick={signOut}
+                  role="menuitem"
+                  type="button"
+                >
+                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-rose-100">
+                    ↗
+                  </span>
+                  Log out
+                </button>
+              </div>
+            )}
           </div>
         </nav>
 
@@ -746,6 +840,199 @@ function StudentDashboardContent() {
           </div>
         </section>
       </div>
+
+      {profilePanelOpen && (
+        <>
+          <button
+            aria-label="Close profile"
+            className="fixed inset-0 z-40 cursor-default bg-slate-950/45 backdrop-blur-sm"
+            onClick={() => setProfilePanelOpen(false)}
+            type="button"
+          />
+          <aside
+            aria-labelledby="student-profile-title"
+            aria-modal="true"
+            className="fixed inset-y-0 right-0 z-50 w-full max-w-xl overflow-y-auto bg-slate-50 shadow-2xl shadow-slate-950/30"
+            role="dialog"
+          >
+            <div className="bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-800 px-6 pb-7 pt-6 text-white sm:px-8">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-4">
+                  <span className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white/15 text-xl font-black ring-1 ring-white/20">
+                    {profileInitials || "S"}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-200">
+                      Student profile
+                    </p>
+                    <h2
+                      className="mt-1 truncate text-2xl font-black"
+                      id="student-profile-title"
+                    >
+                      {student?.name || "Student"}
+                    </h2>
+                    <p className="mt-1 truncate text-sm text-indigo-100">
+                      {student?.email || "Profile loading…"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  aria-label="Close profile"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/10 text-xl hover:bg-white/20"
+                  onClick={() => setProfilePanelOpen(false)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-6 grid grid-cols-3 gap-3">
+                {[
+                  ["Resume", student?.resume_score || 0],
+                  ["Role match", student?.role_match_score || 0],
+                  ["Mock", student?.mock_interview_score || 0],
+                ].map(([label, score]) => (
+                  <div
+                    className="rounded-2xl bg-white/10 px-3 py-3 ring-1 ring-white/10"
+                    key={label}
+                  >
+                    <p className="text-xs text-indigo-100">{label}</p>
+                    <p className="mt-1 text-2xl font-black">{score}</p>
+                    <p className="text-[10px] text-indigo-200">out of 100</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-5 p-6 sm:p-8">
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                  Personal and academic details
+                </h3>
+                <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {[
+                    ["College", student?.college || "Not added"],
+                    ["Branch", student?.branch || "Not added"],
+                    ["CGPA", student?.cgpa ?? "Not added"],
+                    ["Target role", student?.target_role || "Not selected"],
+                  ].map(([label, value]) => (
+                    <div className="rounded-xl bg-slate-50 px-4 py-3" key={label}>
+                      <dt className="text-xs font-semibold text-slate-500">
+                        {label}
+                      </dt>
+                      <dd className="mt-1 text-sm font-bold text-slate-900">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                  Skills
+                </h3>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {student?.skills ? (
+                    student.skills.split(",").map((skill) => (
+                      <span
+                        className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700"
+                        key={skill.trim()}
+                      >
+                        {skill.trim()}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-500">No skills added yet.</p>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                  Progress
+                </h3>
+                <dl className="mt-4 space-y-3 text-sm">
+                  {[
+                    [
+                      "Self-introduction",
+                      student?.self_introduction_status || "Not Started",
+                    ],
+                    [
+                      "Identity enrollment",
+                      student?.identity_enrollment_status || "Not Started",
+                    ],
+                    ["Applications", applications.length],
+                  ].map(([label, value]) => (
+                    <div
+                      className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-4 py-3"
+                      key={label}
+                    >
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="text-right font-bold text-slate-900">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                  Professional profiles
+                </h3>
+                <div className="mt-4 grid gap-2">
+                  {[
+                    ["LinkedIn", student?.linkedin_url],
+                    ["GitHub", student?.github_url],
+                    ["LeetCode", student?.leetcode_url],
+                  ].map(([label, url]) =>
+                    url ? (
+                      <a
+                        className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm font-bold text-indigo-700 hover:bg-indigo-50"
+                        href={String(url)}
+                        key={label}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {label}
+                        <span aria-hidden="true">↗</span>
+                      </a>
+                    ) : (
+                      <div
+                        className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm"
+                        key={label}
+                      >
+                        <span className="font-bold text-slate-700">{label}</span>
+                        <span className="text-slate-400">Not added</span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </section>
+
+              {student?.ai_profile_summary && (
+                <section className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
+                  <h3 className="text-sm font-black uppercase tracking-[0.14em] text-indigo-700">
+                    AI profile summary
+                  </h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-700">
+                    {student.ai_profile_summary}
+                  </p>
+                </section>
+              )}
+
+              <button
+                className="w-full rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-black text-rose-600 hover:bg-rose-50"
+                onClick={signOut}
+                type="button"
+              >
+                Log out
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
     </main>
   );
 }
