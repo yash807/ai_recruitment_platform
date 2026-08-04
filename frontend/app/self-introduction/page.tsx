@@ -9,6 +9,8 @@ import { getBackendMediaUrl } from "../backend-media";
 const API_URL = "/api";
 const MIN_RECORDING_SECONDS = 60;
 const MAX_RECORDING_SECONDS = 90;
+const VIDEO_BITS_PER_SECOND = 1_000_000;
+const AUDIO_BITS_PER_SECOND = 64_000;
 
 const INTRODUCTION_PROMPTS = [
   "Your name, college, degree, and branch.",
@@ -206,8 +208,8 @@ export default function SelfIntroductionPage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "user",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 960 },
+          height: { ideal: 540 },
         },
         audio: {
           echoCancellation: true,
@@ -251,9 +253,12 @@ export default function SelfIntroductionPage() {
     chunksRef.current = [];
 
     const mimeType = chooseRecordingMimeType();
-    const recorder = mimeType
-      ? new MediaRecorder(stream, { mimeType })
-      : new MediaRecorder(stream);
+    const recorderOptions: MediaRecorderOptions = {
+      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+    };
+    if (mimeType) recorderOptions.mimeType = mimeType;
+    const recorder = new MediaRecorder(stream, recorderOptions);
     const actualMimeType = recorder.mimeType || mimeType || "video/webm";
 
     recorderRef.current = recorder;
@@ -437,8 +442,12 @@ export default function SelfIntroductionPage() {
         router.push(`/mock-interview?student_id=${studentId}`);
       }, 700);
     } catch (error) {
+      const uploadFailed =
+        error instanceof TypeError && error.message === "Failed to fetch";
       setErrorMessage(
-        error instanceof Error
+        uploadFailed
+          ? "The video upload connection closed before processing finished. Check your connection and retry this recording."
+          : error instanceof Error
           ? error.message
           : "Could not submit the self-introduction.",
       );

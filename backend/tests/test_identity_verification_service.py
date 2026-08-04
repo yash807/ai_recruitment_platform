@@ -11,10 +11,17 @@ from app.identity_verification_service import (
     compare_face_signatures,
     identity_reference_is_valid,
     get_video_duration_seconds,
+    has_repeated_multi_face_evidence,
 )
 
 
 class IdentityVerificationServiceTests(unittest.TestCase):
+    def test_single_multi_face_detection_is_not_enough_to_reject(self) -> None:
+        self.assertFalse(has_repeated_multi_face_evidence(1, 12))
+
+    def test_repeated_multi_face_detections_are_rejected(self) -> None:
+        self.assertTrue(has_repeated_multi_face_evidence(2, 12))
+
     def test_reference_is_json_serializable_and_versioned(self) -> None:
         reference = build_face_reference(
             [

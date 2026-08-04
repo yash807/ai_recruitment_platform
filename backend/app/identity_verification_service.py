@@ -33,7 +33,10 @@ MIN_VERIFICATION_FACE_RATIO = 0.50
 MIN_USABLE_ENROLLMENT_FRAMES = 6
 MIN_USABLE_VERIFICATION_FRAMES = 3
 MIN_ENROLLMENT_CONSISTENCY = 0.58
-DEFAULT_SAMPLE_COUNT = 20
+DEFAULT_SAMPLE_COUNT = 12
+MIN_MULTI_FACE_FRAMES = 2
+MIN_MULTI_FACE_FRAME_RATIO = 0.15
+MIN_SECONDARY_FACE_AREA_RATIO = 0.20
 
 
 class IdentityVerificationError(RuntimeError):
@@ -64,6 +67,23 @@ class _VideoFaceObservations:
     sampled_frames: int
     max_face_count: int
     multi_face_frames: int
+
+
+def has_repeated_multi_face_evidence(
+    multi_face_frames: int,
+    sampled_frames: int,
+) -> bool:
+    """Require repeated detections before rejecting a recording.
+
+    Haar cascades can occasionally classify posters, reflections, or high-
+    contrast objects as a second face. A real additional person should remain
+    visible in more than one of the frames sampled across the recording.
+    """
+    required_frames = max(
+        MIN_MULTI_FACE_FRAMES,
+        math.ceil(sampled_frames * MIN_MULTI_FACE_FRAME_RATIO),
+    )
+    return multi_face_frames >= required_frames
 
 
 def cosine_similarity(
@@ -189,7 +209,10 @@ def enroll_identity_from_video(video_path: Path) -> IdentityEnrollmentResult:
     sampled = observations.sampled_frames
     usable = len(observations.signatures)
 
-    if observations.multi_face_frames:
+    if has_repeated_multi_face_evidence(
+        observations.multi_face_frames,
+        sampled,
+    ):
         return IdentityEnrollmentResult(
             status="Rejected",
             face_count=observations.max_face_count,
@@ -250,7 +273,10 @@ def verify_identity_in_video(
     sampled = observations.sampled_frames
     usable = len(observations.signatures)
 
-    if observations.multi_face_frames:
+    if has_repeated_multi_face_evidence(
+        observations.multi_face_frames,
+        sampled,
+    ):
         return IdentityVerificationResult(
             status="Rejected",
             face_count=observations.max_face_count,
@@ -505,6 +531,18 @@ def _observe_video_faces(video_path: Path) -> _VideoFaceObservations:
                 minNeighbors=5,
                 minSize=(48, 48),
             )
+            faces = list(faces)
+            if len(faces) > 1:
+                largest_area = max(
+                    int(width) * int(height)
+                    for _, _, width, height in faces
+                )
+                faces = [
+                    face
+                    for face in faces
+                    if int(face[2]) * int(face[3])
+                    >= largest_area * MIN_SECONDARY_FACE_AREA_RATIO
+                ]
             face_count = len(faces)
             max_face_count = max(max_face_count, face_count)
             if face_count > 1:
