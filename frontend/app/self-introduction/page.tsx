@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { getBackendMediaUrl } from "../backend-media";
+import {
+  createMediaRecorder,
+  getBackendMediaUrl,
+  isFetchConnectionError,
+  mediaRequestErrorMessage,
+} from "../backend-media";
 
 const API_URL = "/api";
 const MIN_RECORDING_SECONDS = 60;
 const MAX_RECORDING_SECONDS = 90;
-const VIDEO_BITS_PER_SECOND = 1_000_000;
-const AUDIO_BITS_PER_SECOND = 64_000;
 
 const INTRODUCTION_PROMPTS = [
   "Your name, college, degree, and branch.",
@@ -30,6 +33,7 @@ type Student = {
   college: string | null;
   branch: string | null;
   target_role: string | null;
+  self_introduction_status?: string | null;
 };
 
 type ChallengeResponse = {
@@ -253,12 +257,7 @@ export default function SelfIntroductionPage() {
     chunksRef.current = [];
 
     const mimeType = chooseRecordingMimeType();
-    const recorderOptions: MediaRecorderOptions = {
-      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
-      audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
-    };
-    if (mimeType) recorderOptions.mimeType = mimeType;
-    const recorder = new MediaRecorder(stream, recorderOptions);
+    const recorder = createMediaRecorder(stream, mimeType);
     const actualMimeType = recorder.mimeType || mimeType || "video/webm";
 
     recorderRef.current = recorder;
@@ -442,14 +441,43 @@ export default function SelfIntroductionPage() {
         router.push(`/mock-interview?student_id=${studentId}`);
       }, 700);
     } catch (error) {
-      const uploadFailed =
-        error instanceof TypeError && error.message === "Failed to fetch";
+      if (isFetchConnectionError(error) && studentId) {
+        try {
+          const recoveryResponse = await fetch(
+            `${API_URL}/students/${studentId}`,
+            { cache: "no-store" },
+          );
+          if (recoveryResponse.ok) {
+            const recoveredStudent: Student = await recoveryResponse.json();
+            const recoveredStatus = (
+              recoveredStudent.self_introduction_status || ""
+            ).toLowerCase();
+            if (recoveredStatus === "completed") {
+              setMessage(
+                "Self-introduction completed. The response disconnected, but your result was recovered from the server.",
+              );
+              window.setTimeout(() => {
+                router.push(`/mock-interview?student_id=${studentId}`);
+              }, 700);
+              return;
+            }
+            if (recoveredStatus === "processing") {
+              setErrorMessage(
+                "The upload reached the server and is still processing. Wait a moment, then refresh this page to check the result.",
+              );
+              setMessage("");
+              return;
+            }
+          }
+        } catch {
+          // Show the shared connection message when recovery is also unavailable.
+        }
+      }
       setErrorMessage(
-        uploadFailed
-          ? "The video upload connection closed before processing finished. Check your connection and retry this recording."
-          : error instanceof Error
-          ? error.message
-          : "Could not submit the self-introduction.",
+        mediaRequestErrorMessage(
+          error,
+          "Could not submit the self-introduction.",
+        ),
       );
       setMessage("");
       setSubmitting(false);

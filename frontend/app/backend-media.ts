@@ -3,6 +3,41 @@ type BackendConfigResponse = {
   detail?: string;
 };
 
+export const MEDIA_RECORDER_VIDEO_BITS_PER_SECOND = 1_000_000;
+export const MEDIA_RECORDER_AUDIO_BITS_PER_SECOND = 64_000;
+
+export function createMediaRecorder(
+  stream: MediaStream,
+  mimeType: string,
+) {
+  const options: MediaRecorderOptions = {
+    videoBitsPerSecond: MEDIA_RECORDER_VIDEO_BITS_PER_SECOND,
+    audioBitsPerSecond: MEDIA_RECORDER_AUDIO_BITS_PER_SECOND,
+  };
+  if (mimeType) options.mimeType = mimeType;
+  return new MediaRecorder(stream, options);
+}
+
+export function isFetchConnectionError(error: unknown) {
+  return (
+    error instanceof TypeError &&
+    /failed to fetch|networkerror|load failed/i.test(error.message)
+  );
+}
+
+export function mediaRequestErrorMessage(
+  error: unknown,
+  fallback: string,
+) {
+  if (isFetchConnectionError(error)) {
+    return (
+      "The connection to the video-processing server was interrupted. " +
+      "Your recording was kept in this browser; retry when the server is available."
+    );
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 let backendBaseUrlPromise: Promise<string> | null = null;
 
 async function loadBackendBaseUrl() {

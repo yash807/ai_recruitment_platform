@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { getBackendMediaUrl } from "../backend-media";
+import {
+  createMediaRecorder,
+  getBackendMediaUrl,
+  isFetchConnectionError,
+  mediaRequestErrorMessage,
+} from "../backend-media";
 
 // Small API calls use the Next.js proxy; video files upload directly to FastAPI.
 const API_URL = "/api";
@@ -133,8 +138,15 @@ export default function CompanyInterviewPage() {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: {
+          facingMode: "user",
+          width: { ideal: 960 },
+          height: { ideal: 540 },
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
       });
       streamRef.current = stream;
       if (liveVideoRef.current) {
@@ -157,6 +169,8 @@ export default function CompanyInterviewPage() {
     if (!interview) return;
 
     setUploading(true);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(blob));
     setMessage(
       "Checking identity, transcribing your answer, and preparing the next question...",
     );
@@ -185,8 +199,6 @@ export default function CompanyInterviewPage() {
         throw new Error(result.detail || "Could not save the video answer.");
       }
 
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(blob));
       setInterview((current) =>
         current
           ? {
@@ -211,8 +223,43 @@ export default function CompanyInterviewPage() {
         setMessage(result.message);
       }
     } catch (error) {
+      if (isFetchConnectionError(error)) {
+        try {
+          const recoveryResponse = await fetch(
+            `${API_URL}/company-interviews/${interview.id}`,
+            { cache: "no-store" },
+          );
+          if (recoveryResponse.ok) {
+            const recovered: CompanyInterviewSession =
+              await recoveryResponse.json();
+            if (
+              recovered.recorded_question_indexes.includes(
+                currentQuestionIndex,
+              )
+            ) {
+              setInterview(recovered);
+              if (recovered.status === "Ready to Submit") {
+                streamRef.current?.getTracks().forEach((track) => track.stop());
+                setCameraReady(false);
+                setMessage(
+                  "Answer saved. The response disconnected, but the completed recording was recovered from the server.",
+                );
+              } else {
+                const nextIndex = recovered.recorded_question_indexes.length;
+                setCurrentQuestionIndex(nextIndex);
+                setMessage(
+                  "Answer saved. The response disconnected, so interview progress was recovered from the server.",
+                );
+              }
+              return;
+            }
+          }
+        } catch {
+          // Show the shared connection message when recovery is also unavailable.
+        }
+      }
       setMessage(
-        error instanceof Error ? error.message : "Could not save the answer.",
+        mediaRequestErrorMessage(error, "Could not save the answer."),
       );
     } finally {
       setUploading(false);
@@ -236,7 +283,7 @@ export default function CompanyInterviewPage() {
         : "video/mp4";
 
     chunksRef.current = [];
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const recorder = createMediaRecorder(stream, mimeType);
     recorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunksRef.current.push(event.data);

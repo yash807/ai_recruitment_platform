@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { getBackendMediaUrl } from "../backend-media";
+import {
+  createMediaRecorder,
+  getBackendMediaUrl,
+  isFetchConnectionError,
+  mediaRequestErrorMessage,
+} from "../backend-media";
 
 // Small API calls use the Next.js proxy; video files upload directly to FastAPI.
 const API_URL = "/api";
@@ -168,8 +173,15 @@ export default function MockInterviewPage() {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: {
+          facingMode: "user",
+          width: { ideal: 960 },
+          height: { ideal: 540 },
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
       });
       streamRef.current = stream;
       if (liveVideoRef.current) {
@@ -192,6 +204,8 @@ export default function MockInterviewPage() {
     if (!interview) return;
 
     setUploading(true);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(blob));
     try {
       const extension = mimeType.includes("mp4") ? "mp4" : "webm";
       const videoFile = new File(
@@ -217,8 +231,6 @@ export default function MockInterviewPage() {
         throw new Error(result.detail || "Could not save the recorded answer.");
       }
 
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(blob));
       setInterview((current) =>
         current
           ? {
@@ -238,7 +250,42 @@ export default function MockInterviewPage() {
         setMessage("Answer saved. Continue with the next question.");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save the answer.");
+      if (isFetchConnectionError(error)) {
+        try {
+          const recoveryResponse = await fetch(
+            `${API_URL}/mock-interviews/${interview.id}`,
+            { cache: "no-store" },
+          );
+          if (recoveryResponse.ok) {
+            const recovered: InterviewSession = await recoveryResponse.json();
+            if (
+              recovered.recorded_question_indexes.includes(
+                currentQuestionIndex,
+              )
+            ) {
+              setInterview(recovered);
+              if (recovered.status === "Completed") {
+                streamRef.current?.getTracks().forEach((track) => track.stop());
+                setCameraReady(false);
+                setMessage(
+                  "Answer saved. The upload response disconnected, but all five answers were recovered from the server.",
+                );
+              } else {
+                setCurrentQuestionIndex((current) => current + 1);
+                setMessage(
+                  "Answer saved. The upload response disconnected, so progress was recovered from the server.",
+                );
+              }
+              return;
+            }
+          }
+        } catch {
+          // Show the shared connection message when recovery is also unavailable.
+        }
+      }
+      setMessage(
+        mediaRequestErrorMessage(error, "Could not save the answer."),
+      );
     } finally {
       setUploading(false);
     }
@@ -259,7 +306,7 @@ export default function MockInterviewPage() {
         : "video/mp4";
 
     chunksRef.current = [];
-    const recorder = new MediaRecorder(stream, { mimeType: preferredMimeType });
+    const recorder = createMediaRecorder(stream, preferredMimeType);
     recorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunksRef.current.push(event.data);
