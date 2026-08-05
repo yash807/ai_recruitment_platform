@@ -25,6 +25,7 @@ from ..media_uploads import (
 from ..models import self_introductions, students
 from ..role_profiles import get_role_profile
 from ..self_introduction_service import (
+    SelfIntroductionAnswer,
     SelfIntroductionProfile,
     challenge_phrase_was_spoken,
     extract_self_introduction_profile,
@@ -42,6 +43,7 @@ SELF_INTRODUCTION_UPLOAD_DIR = PROJECT_ROOT / "uploads" / "self-introductions"
 ALLOWED_VIDEO_EXTENSIONS = {".webm", ".mp4", ".mov"}
 MAX_VIDEO_SIZE = 150 * 1024 * 1024
 CHALLENGE_TTL = timedelta(minutes=20)
+QUESTION_TIME_LIMIT_SECONDS = 5.0
 
 COLORS = (
     "amber",
@@ -84,11 +86,16 @@ CODEWORDS = (
 )
 
 INTRODUCTION_TEMPLATE = [
-    "State your full name, college, course or branch, and current year.",
-    "Explain the role you are targeting and why it interests you.",
-    "Describe one important project: the problem, your contribution, tools, and result.",
-    "Mention your strongest relevant skills and any internship or team experience.",
-    "Finish with your career goal and clearly speak the verification phrase shown below.",
+    "State your name, college, degree, branch, and current year.",
+    "Name the job role you are targeting and why it interests you.",
+    "Mention your strongest technical skills.",
+    "Describe your most important project and the problem it solves.",
+    "Explain your personal contribution to that project.",
+    "Name the main technologies you used.",
+    "Describe one challenge you faced and how you solved it.",
+    "Summarize your internship or work experience, if any.",
+    "State your career goal.",
+    "Clearly speak the verification phrase shown on screen.",
 ]
 
 
@@ -110,6 +117,8 @@ class SelfIntroductionSubmissionResponse(BaseModel):
     liveness_status: str
     identity_enrollment_status: str
     transcript: str
+    question_answers: list[SelfIntroductionAnswer]
+    timing_summary: dict[str, float | int]
     extracted_profile: SelfIntroductionProfile
     redirect_to: str
     message: str
@@ -132,11 +141,12 @@ def _serialize_challenge(introduction) -> SelfIntroductionChallengeResponse:
         challenge_phrase=challenge_phrase,
         challenge=challenge_phrase,
         instruction=(
-            "Record one continuous 60–90 second video. Keep your full face "
-            "visible, follow the template, and speak the verification phrase."
+            "Upload or record one continuous video. Start every answer by saying "
+            "'Question 1', 'Question 2', and so on through 'Question 10'. Keep "
+            "your full face visible and keep each answer close to five seconds."
         ),
         template=INTRODUCTION_TEMPLATE,
-        recommended_duration_seconds={"minimum": 60, "maximum": 90},
+        recommended_duration_seconds={"minimum": 30, "maximum": 75},
     )
 
 
@@ -274,10 +284,10 @@ def submit_self_introduction(
             detail="The verification phrase expired. Reload the page for a new phrase.",
         )
 
-    if duration_seconds < 58 or duration_seconds > 92:
+    if duration_seconds < 10 or duration_seconds > 77:
         raise HTTPException(
             status_code=400,
-            detail="Please record one continuous self-introduction of about 60–90 seconds.",
+            detail="Please submit one continuous self-introduction of 10–75 seconds.",
         )
 
     original_filename = video.filename or "self-introduction.webm"
@@ -312,12 +322,12 @@ def submit_self_introduction(
     except IdentityVerificationError as error:
         stored_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=str(error)) from error
-    if actual_duration_seconds < 55 or actual_duration_seconds > 100:
+    if actual_duration_seconds < 8 or actual_duration_seconds > 85:
         stored_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=400,
             detail=(
-                "The encoded video must be 60–90 seconds long. "
+                "The encoded video must be no longer than 75 seconds. "
                 f"Detected duration: {actual_duration_seconds:.1f} seconds."
             ),
         )
@@ -358,7 +368,43 @@ def submit_self_introduction(
                 ),
             )
 
-        transcript = transcribe_self_introduction(stored_path)
+        transcription = transcribe_self_introduction(
+            stored_path,
+            INTRODUCTION_TEMPLATE,
+            time_limit_seconds=QUESTION_TIME_LIMIT_SECONDS,
+        )
+        transcript = transcription.transcript
+
+        if transcription.missing_question_numbers:
+            missing = ", ".join(
+                str(number) for number in transcription.missing_question_numbers
+            )
+            introduction.status = "Needs Retake"
+            introduction.liveness_status = "Verified"
+            introduction.identity_enrollment_status = "Needs Retake"
+            introduction.identity_reference = None
+            introduction.video_path = None
+            introduction.transcript = transcript
+            introduction.question_answers = [
+                answer.model_dump() for answer in transcription.answers
+            ]
+            introduction.analysis_error = (
+                f"Question markers or answers were missing for: {missing}."
+            )
+            self_introductions.save(introduction)
+            student.self_introduction_status = "Needs Retake"
+            student.identity_enrollment_status = "Needs Retake"
+            students.save(student)
+            stored_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "The video could not be split into all ten answers. Start "
+                    "each answer by clearly saying its number. Missing question "
+                    f"numbers: {missing}."
+                ),
+            )
+
         phrase_was_detected = challenge_phrase_was_spoken(
             transcript,
             introduction.challenge_phrase or "",
@@ -397,6 +443,20 @@ def submit_self_introduction(
 
         extracted_profile = extract_self_introduction_profile(student, transcript)
         introduction.transcript = transcript
+        introduction.question_answers = [
+            answer.model_dump() for answer in transcription.answers
+        ]
+        introduction.timing_summary = {
+            "question_count": len(transcription.answers),
+            "within_time_limit_count": sum(
+                answer.within_time_limit for answer in transcription.answers
+            ),
+            "time_limit_seconds": QUESTION_TIME_LIMIT_SECONDS,
+            "total_answer_seconds": round(
+                sum(answer.duration_seconds for answer in transcription.answers),
+                2,
+            ),
+        }
         introduction.extracted_profile = extracted_profile.model_dump()
         introduction.identity_reference = enrollment.reference
         introduction.liveness_status = "Verified"
@@ -450,6 +510,8 @@ def submit_self_introduction(
         liveness_status=introduction.liveness_status,
         identity_enrollment_status=introduction.identity_enrollment_status,
         transcript=transcript,
+        question_answers=transcription.answers,
+        timing_summary=introduction.timing_summary,
         extracted_profile=extracted_profile,
         redirect_to=f"/mock-interview?student_id={student.id}",
         message=(

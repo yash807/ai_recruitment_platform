@@ -65,15 +65,16 @@ multi-part, ungrounded, and protected-topic questions. If the model or API is
 unavailable, a deterministic job-description question keeps the interview
 usable. Final scoring remains the local, explainable recruiter evaluation.
 
-Local configuration in `backend/.env`:
+Local free-tier configuration in `backend/.env`:
 
 ```text
-OPENAI_API_KEY=your server-side API key
-OPENAI_MODEL=gpt-5.6-terra
+GROQ_API_KEY=your server-side Groq API key
+GROQ_MODEL=openai/gpt-oss-20b
 COMPANY_INTERVIEW_MAX_QUESTIONS=5
 ```
 
-Never use a `NEXT_PUBLIC_` variable for the API key.
+Never use a `NEXT_PUBLIC_` variable for the API key. Groq is the only external
+question-generation provider used by the backend.
 
 The face checker is a prototype continuity control, not proof of legal
 identity. It performs no emotion or demographic inference. Production use
@@ -95,8 +96,8 @@ In Render, set:
 ```text
 MONGODB_URI=your MongoDB connection string
 FRONTEND_ORIGINS=https://your-production-vercel-domain.vercel.app
-OPENAI_API_KEY=your server-side API key
-OPENAI_MODEL=gpt-5.6-terra
+GROQ_API_KEY=your server-side Groq API key
+GROQ_MODEL=openai/gpt-oss-20b
 COMPANY_INTERVIEW_MAX_QUESTIONS=5
 ```
 

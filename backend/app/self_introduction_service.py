@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from .ai_interview_service import AIAnalysisError, transcribe_recordings
+from .ai_interview_service import AIAnalysisError, get_local_whisper_model
 from .models import Doc
 from .role_profiles import get_role_profile
 
@@ -32,6 +32,29 @@ class SelfIntroductionProfile(BaseModel):
     source: str = "self-reported introduction transcript"
 
 
+class SelfIntroductionAnswer(BaseModel):
+    question_number: int
+    prompt: str
+    transcript: str
+    start_seconds: float
+    end_seconds: float
+    duration_seconds: float
+    time_limit_seconds: float
+    within_time_limit: bool
+
+
+class SelfIntroductionTranscription(BaseModel):
+    transcript: str
+    answers: list[SelfIntroductionAnswer]
+    missing_question_numbers: list[int]
+
+
+class _TimedWord(BaseModel):
+    text: str
+    start_seconds: float
+    end_seconds: float
+
+
 _SPOKEN_WORD_ALIASES = {
     "amber": {"ember"},
     "coral": {"choral"},
@@ -45,12 +68,25 @@ _SPOKEN_WORD_ALIASES = {
     "four": {"for", "fore"},
     "six": {"sicks"},
     "eight": {"ate"},
+    "violet": {"boiled", "voilait", "wallet"},
     "breeze": {"breezy"},
     "maple": {"mabel"},
     "quartz": {"quarts", "courts"},
 }
 _PHRASE_MARKER_ALIASES = {"phrase", "phase", "face", "frays", "code"}
 _CHALLENGE_FILLER_WORDS = {"is", "was", "equals", "equal", "uh", "um"}
+_QUESTION_NUMBER_ALIASES = {
+    1: {"1", "one", "won", "first"},
+    2: {"2", "two", "to", "too", "second"},
+    3: {"3", "three", "tree", "third"},
+    4: {"4", "four", "for", "fore", "fourth"},
+    5: {"5", "five", "fifth"},
+    6: {"6", "six", "sicks", "sixth"},
+    7: {"7", "seven", "seventh"},
+    8: {"8", "eight", "ate", "eighth"},
+    9: {"9", "nine", "ninth"},
+    10: {"10", "ten", "tenth"},
+}
 
 
 def normalize_spoken_text(value: str) -> str:
@@ -282,19 +318,158 @@ def extract_self_introduction_profile(
     )
 
 
+def _clean_word(value: str) -> str:
+    matches = re.findall(r"[a-z0-9]+", value.lower())
+    return matches[0] if matches else ""
+
+
+def _question_marker(words: list[_TimedWord], index: int) -> tuple[int, int] | None:
+    """Return ``(question number, token width)`` for a spoken marker."""
+    first = _clean_word(words[index].text)
+    second = _clean_word(words[index + 1].text) if index + 1 < len(words) else ""
+    for number, aliases in _QUESTION_NUMBER_ALIASES.items():
+        if first in {"question", "questions", "q"} and second in aliases:
+            return number, 2
+        if first in aliases and second in {"question", "questions"}:
+            return number, 2
+    return None
+
+
+def _join_words(words: list[_TimedWord]) -> str:
+    text = " ".join(word.text.strip() for word in words if word.text.strip())
+    return re.sub(r"\s+([,.!?;:])", r"\1", text).strip()
+
+
+def split_numbered_answers(
+    words: list[_TimedWord],
+    prompts: list[str],
+    *,
+    time_limit_seconds: float = 5.0,
+) -> SelfIntroductionTranscription:
+    """Split a continuous transcript using sequential spoken question markers."""
+    markers: list[tuple[int, int, int]] = []
+    last_number = 0
+    index = 0
+    while index < len(words):
+        marker = _question_marker(words, index)
+        if marker:
+            number, marker_width = marker
+            if number <= len(prompts) and number > last_number:
+                markers.append((number, index, index + marker_width))
+                last_number = number
+            index += marker_width
+            continue
+        index += 1
+
+    # Whisper can omit a marker spoken immediately as recording begins while
+    # still transcribing the complete first answer. Recover only that narrow
+    # case: Question 2 must be the first recognized marker and there must be a
+    # meaningful spoken section before it. Later missing markers remain errors.
+    if markers and markers[0][0] == 2:
+        first_answer_words = [
+            word for word in words[: markers[0][1]] if _clean_word(word.text)
+        ]
+        if len(first_answer_words) >= 5:
+            markers.insert(0, (1, 0, 0))
+
+    answers: list[SelfIntroductionAnswer] = []
+    for marker_index, (number, _marker_start, answer_start) in enumerate(markers):
+        answer_end = (
+            markers[marker_index + 1][1]
+            if marker_index + 1 < len(markers)
+            else len(words)
+        )
+        answer_words = words[answer_start:answer_end]
+        while answer_words and not _clean_word(answer_words[0].text):
+            answer_words = answer_words[1:]
+        if not answer_words:
+            continue
+        start_seconds = answer_words[0].start_seconds
+        end_seconds = answer_words[-1].end_seconds
+        duration_seconds = max(0.0, end_seconds - start_seconds)
+        answers.append(
+            SelfIntroductionAnswer(
+                question_number=number,
+                prompt=prompts[number - 1],
+                transcript=_join_words(answer_words),
+                start_seconds=round(start_seconds, 2),
+                end_seconds=round(end_seconds, 2),
+                duration_seconds=round(duration_seconds, 2),
+                time_limit_seconds=time_limit_seconds,
+                within_time_limit=duration_seconds <= time_limit_seconds,
+            )
+        )
+
+    answered_numbers = {answer.question_number for answer in answers}
+    return SelfIntroductionTranscription(
+        transcript=_join_words(words),
+        answers=answers,
+        missing_question_numbers=[
+            number
+            for number in range(1, len(prompts) + 1)
+            if number not in answered_numbers
+        ],
+    )
+
+
 def transcribe_self_introduction(
     video_path: Path,
-) -> str:
-    """Transcribe one self-introduction with phrase-safe accuracy settings."""
+    prompts: list[str],
+    *,
+    time_limit_seconds: float = 5.0,
+) -> SelfIntroductionTranscription:
+    """Transcribe once with word timestamps, then time every numbered answer."""
     try:
-        return transcribe_recordings(
-            {"0": str(video_path)},
-            1,
-            beam_size=5,
+        if not video_path.exists():
+            raise AIAnalysisError("The self-introduction video could not be found.")
+        model = get_local_whisper_model()
+        segments, _ = model.transcribe(
+            str(video_path),
+            language="en",
+            beam_size=3,
             vad_filter=False,
             condition_on_previous_text=False,
             temperature=0.0,
-        )[0]
+            word_timestamps=True,
+            initial_prompt=(
+                "The speaker answers Question 1 through Question 10 in order "
+                "and then says: My verification phrase is."
+            ),
+        )
+        timed_words: list[_TimedWord] = []
+        for segment in segments:
+            segment_words = list(segment.words or [])
+            if segment_words:
+                timed_words.extend(
+                    _TimedWord(
+                        text=word.word,
+                        start_seconds=float(word.start),
+                        end_seconds=float(word.end),
+                    )
+                    for word in segment_words
+                )
+                continue
+
+            # Defensive fallback for models that omit word timestamps.
+            raw_words = re.findall(r"\S+", segment.text.strip())
+            if not raw_words:
+                continue
+            word_duration = max(0.01, (segment.end - segment.start) / len(raw_words))
+            timed_words.extend(
+                _TimedWord(
+                    text=word,
+                    start_seconds=float(segment.start + offset * word_duration),
+                    end_seconds=float(segment.start + (offset + 1) * word_duration),
+                )
+                for offset, word in enumerate(raw_words)
+            )
+        if not timed_words:
+            raise AIAnalysisError("No clear speech was detected in the video.")
+        return split_numbered_answers(
+            timed_words,
+            prompts,
+            time_limit_seconds=time_limit_seconds,
+        )
     except AIAnalysisError:
         raise
     except Exception as error:

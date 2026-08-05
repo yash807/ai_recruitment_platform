@@ -12,6 +12,7 @@ from ..ai_interview_service import (
     evaluate_transcripts,
     transcribe_recordings,
 )
+from ..adaptive_interview_service import generate_mock_question_set
 from ..identity_workflow import (
     IdentityContinuityError,
     require_verified_identity_enrollment,
@@ -64,8 +65,10 @@ class InterviewAnalysisResponse(BaseModel):
     evaluation: InterviewEvaluation
 
 
-# Build five questions from the student's skills and selected target role.
-def generate_mock_questions(student: Doc) -> list[str]:
+# Ask the configured LLM for five questions, with local questions as fallback.
+def generate_mock_questions(
+    student: Doc,
+) -> tuple[list[str], dict[str, str | None]]:
     skills = [
         skill.strip()
         for skill in (student.skills or "").split(",")
@@ -96,7 +99,7 @@ def generate_mock_questions(student: Doc) -> list[str]:
         )
     )
 
-    return [
+    fallback_questions = [
         (
             f"You mentioned “{project_context}”. Explain the problem, your exact "
             "contribution, one difficult decision, and the result."
@@ -109,6 +112,21 @@ def generate_mock_questions(student: Doc) -> list[str]:
         role_questions[0],
         role_questions[1],
     ]
+    role_competencies = (
+        [
+            *role_profile["core_skills"].keys(),
+            *role_profile["supporting_skills"].keys(),
+        ]
+        if role_profile
+        else skills
+    )
+    return generate_mock_question_set(
+        target_role=target_role,
+        skills=skills,
+        role_competencies=role_competencies,
+        project_context=project_context,
+        fallback_questions=fallback_questions,
+    )
 
 
 # Convert JSON text stored in Mongo back into normal Python lists.
@@ -152,10 +170,12 @@ def start_mock_interview(student_id: int):
             detail=str(error),
         ) from error
 
+    questions, question_metadata = generate_mock_questions(student)
     interview = mock_interviews.create(
         {
             "student_id": student.id,
-            "questions": json.dumps(generate_mock_questions(student)),
+            "questions": json.dumps(questions),
+            "question_metadata": json.dumps(question_metadata),
             "video_paths": "{}",
             "status": "In Progress",
             "transcripts": "[]",

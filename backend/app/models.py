@@ -203,6 +203,7 @@ class MockInterviewRepository(MongoRepository):
     collection_name = "mock_interviews"
     defaults = {
         "video_paths": "{}",
+        "question_metadata": "{}",
         "status": "In Progress",
         "transcripts": "[]",
         "ai_evaluation": None,
@@ -231,6 +232,8 @@ class SelfIntroductionRepository(MongoRepository):
     defaults = {
         "video_path": None,
         "transcript": None,
+        "question_answers": [],
+        "timing_summary": None,
         "extracted_profile": None,
         "status": "Not Started",
         "liveness_status": "Not Started",

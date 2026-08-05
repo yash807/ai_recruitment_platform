@@ -10,6 +10,10 @@ from fastapi import HTTPException, UploadFile
 from app.identity_verification_service import IdentityEnrollmentResult
 from app.models import Doc
 from app.routes import self_introductions as routes
+from app.self_introduction_service import (
+    SelfIntroductionAnswer,
+    SelfIntroductionTranscription,
+)
 
 
 class SelfIntroductionRouteTests(unittest.TestCase):
@@ -64,8 +68,29 @@ class SelfIntroductionRouteTests(unittest.TestCase):
             },
         )
         transcript = (
-            "I built a Python dashboard project. "
-            "My verification face is amber garden for quarts."
+            "Question one I built a Python dashboard project. "
+            "Question ten My verification face is amber garden for quarts."
+        )
+        transcription = SelfIntroductionTranscription(
+            transcript=transcript,
+            answers=[
+                SelfIntroductionAnswer(
+                    question_number=number,
+                    prompt=routes.INTRODUCTION_TEMPLATE[number - 1],
+                    transcript=(
+                        "My verification face is amber garden for quarts."
+                        if number == 10
+                        else f"Answer {number}"
+                    ),
+                    start_seconds=float(number),
+                    end_seconds=float(number + 4),
+                    duration_seconds=4.0,
+                    time_limit_seconds=5.0,
+                    within_time_limit=True,
+                )
+                for number in range(1, 11)
+            ],
+            missing_question_numbers=[],
         )
 
         with TemporaryDirectory() as directory, patch.object(
@@ -103,7 +128,7 @@ class SelfIntroductionRouteTests(unittest.TestCase):
         ), patch.object(
             routes,
             "transcribe_self_introduction",
-            return_value=transcript,
+            return_value=transcription,
         ) as transcribe:
             result = routes.submit_self_introduction(
                 introduction_id=8,
@@ -117,6 +142,8 @@ class SelfIntroductionRouteTests(unittest.TestCase):
         self.assertEqual(self.student.identity_enrollment_status, "Verified")
         self.assertIsNotNone(self.introduction.identity_reference)
         self.assertEqual(self.introduction.transcript, transcript)
+        self.assertEqual(len(result.question_answers), 10)
+        self.assertEqual(result.timing_summary["within_time_limit_count"], 10)
         self.assertEqual(transcribe.call_count, 1)
 
     def test_old_introduction_id_cannot_replace_current_enrollment(self) -> None:
