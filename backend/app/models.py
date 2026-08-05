@@ -336,6 +336,26 @@ class CompanyInterviewRepository(MongoRepository):
         return _wrap(documents[0]) if documents else None
 
 
+class ResumeBuilderRepository(MongoRepository):
+    collection_name = "resume_builders"
+    defaults = {
+        "template": "two-column",
+        "basics": {},
+        "education": [],
+        "experience": [],
+        "projects": [],
+        "skills": [],
+        "certifications": [],
+        "achievements": [],
+        "leadership": [],
+        "languages": [],
+        "interests": [],
+    }
+
+    def get_for_student(self, student_id: int) -> Doc | None:
+        return self.find_one({"student_id": student_id})
+
+
 def ensure_indexes() -> None:
     """Create unique/lookup indexes. Safe to call on every startup."""
     mongo_db["students"].create_index("id", unique=True)
@@ -380,6 +400,9 @@ def ensure_indexes() -> None:
     mongo_db["company_interviews"].create_index("id", unique=True)
     mongo_db["company_interviews"].create_index("application_id")
 
+    mongo_db["resume_builders"].create_index("id", unique=True)
+    mongo_db["resume_builders"].create_index("student_id", unique=True)
+
 
 students = StudentRepository()
 jobs = JobRepository()
@@ -388,3 +411,4 @@ mock_interviews = MockInterviewRepository()
 self_introductions = SelfIntroductionRepository()
 identity_checks = IdentityCheckRepository()
 company_interviews = CompanyInterviewRepository()
+resume_builders = ResumeBuilderRepository()

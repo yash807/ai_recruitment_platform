@@ -559,7 +559,7 @@ function StudentDashboardContent() {
           </div>
         </header>
 
-        <section className="mt-7 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <Link
             className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href="#resume-analysis"
@@ -582,13 +582,29 @@ function StudentDashboardContent() {
             </p>
           </Link>
 
+          <Link
+            className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            href={`/resume-builder?student_id=${studentId}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-black text-indigo-600">02</span>
+              <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-700">
+                Build
+              </span>
+            </div>
+            <h2 className="mt-3 font-extrabold">Resume builder</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Create and download a resume using two ATS-friendly templates.
+            </p>
+          </Link>
+
           <button
             className="glass-card rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             onClick={openSelfIntroduction}
             type="button"
           >
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-black text-indigo-600">02</span>
+              <span className="text-xs font-black text-indigo-600">03</span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
                   selfIntroductionReady
@@ -610,7 +626,7 @@ function StudentDashboardContent() {
               {selfIntroductionReady
                 ? "Your introduction and identity reference are complete."
                 : resumeReady
-                  ? "Record a 60–90 second introduction and identity check."
+                  ? "Post ten numbered answers and complete the identity check."
                   : "Analyze a resume to unlock this required step."}
             </p>
           </button>
@@ -621,7 +637,7 @@ function StudentDashboardContent() {
             type="button"
           >
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-black text-indigo-600">03</span>
+              <span className="text-xs font-black text-indigo-600">04</span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
                   mockInterviewResult
@@ -654,7 +670,7 @@ function StudentDashboardContent() {
             className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href="#companies"
           >
-            <span className="text-xs font-black text-indigo-600">04</span>
+            <span className="text-xs font-black text-indigo-600">05</span>
             <h2 className="mt-3 font-extrabold">Browse companies</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
               Explore roles and apply using your profile.

@@ -13,6 +13,7 @@ from .routes import (
     company_interviews,
     interviews,
     jobs,
+    resume_builders,
     self_introductions,
     students,
 )
@@ -60,6 +61,7 @@ app.add_middleware(
 
 # Register APIs defined in separate route files.
 app.include_router(students.router)
+app.include_router(resume_builders.router)
 app.include_router(self_introductions.router)
 app.include_router(interviews.router)
 app.include_router(jobs.router)
