@@ -335,11 +335,17 @@ export default function MockInterviewPage() {
 
     setAnalyzing(true);
     setMessage(
-      "Local analysis is running. Five recordings are being transcribed and evaluated on this computer...",
+      "Analysis is running on the video-processing server. Five recordings are being transcribed and evaluated...",
     );
     try {
+      // Analysis can take longer than Vercel's function limit because Render
+      // transcribes five videos. Call FastAPI directly instead of proxying the
+      // request through the Next.js serverless route.
+      const analysisUrl = await getBackendMediaUrl(
+        `/mock-interviews/${interview.id}/analyze`,
+      );
       const response = await fetch(
-        `${API_URL}/mock-interviews/${interview.id}/analyze`,
+        analysisUrl,
         { method: "POST" },
       );
       const responseText = await response.text();
@@ -369,7 +375,7 @@ export default function MockInterviewPage() {
             }
           : current,
       );
-      setMessage("Local readiness profile created and saved to the student profile.");
+      setMessage("Readiness profile created and saved to the student profile.");
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -476,10 +482,10 @@ export default function MockInterviewPage() {
                     type="button"
                   >
                     {analyzing
-                      ? "Analyzing locally..."
+                      ? "Analyzing interview..."
                       : analysis
-                        ? "View saved local analysis"
-                        : "Analyze interview locally"}
+                        ? "View saved analysis"
+                        : "Analyze interview"}
                   </button>
                 </div>
               ) : (
