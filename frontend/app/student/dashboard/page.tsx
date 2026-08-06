@@ -1077,6 +1077,17 @@ function StudentDashboardContent() {
                       (result) => result.application_id === application.id,
                     )
                   : null;
+                const interviewAlreadyCompleted = Boolean(publishedResult) ||
+                  Boolean(
+                    application &&
+                      [
+                        "Company AI Interview Submitted",
+                        "Shortlisted",
+                        "Selected",
+                        "Rejected",
+                        "On Hold",
+                      ].includes(application.status),
+                  );
                 return (
                   <article
                     className="rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-sm"
@@ -1129,11 +1140,7 @@ function StudentDashboardContent() {
                           {application.status}
                         </p>
                         {application.eligible &&
-                          ![
-                            "Selected",
-                            "Rejected",
-                            "Company AI Interview Submitted",
-                          ].includes(application.status) && (
+                          !interviewAlreadyCompleted && (
                             <Link
                               className="mt-3 inline-flex w-full justify-center rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700"
                               href={
