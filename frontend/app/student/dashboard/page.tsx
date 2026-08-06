@@ -554,10 +554,10 @@ function StudentDashboardContent() {
 
         <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <Link
-            className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            className="glass-card flex h-full min-h-[230px] flex-col rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href="#resume-analysis"
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex min-h-7 items-center justify-between gap-3">
               <span className="text-xs font-black text-indigo-600">01</span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
@@ -576,10 +576,10 @@ function StudentDashboardContent() {
           </Link>
 
           <Link
-            className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            className="glass-card flex h-full min-h-[230px] flex-col rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href={`/resume-builder?student_id=${studentId}`}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex min-h-7 items-center justify-between gap-3">
               <span className="text-xs font-black text-indigo-600">02</span>
               <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-700">
                 Build
@@ -592,11 +592,11 @@ function StudentDashboardContent() {
           </Link>
 
           <button
-            className="glass-card rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            className="glass-card flex h-full min-h-[230px] flex-col items-stretch rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             onClick={openSelfIntroduction}
             type="button"
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex min-h-7 items-center justify-between gap-3">
               <span className="text-xs font-black text-indigo-600">03</span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
@@ -625,11 +625,11 @@ function StudentDashboardContent() {
           </button>
 
           <button
-            className="glass-card rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            className="glass-card flex h-full min-h-[230px] flex-col items-stretch rounded-2xl border border-white p-5 text-left shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             onClick={openMockInterview}
             type="button"
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex min-h-7 items-center justify-between gap-3">
               <span className="text-xs font-black text-indigo-600">04</span>
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
@@ -660,10 +660,17 @@ function StudentDashboardContent() {
           </button>
 
           <Link
-            className="glass-card rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
+            className="glass-card flex h-full min-h-[230px] flex-col rounded-2xl border border-white p-5 shadow-lg shadow-slate-200/50 hover:-translate-y-0.5 hover:border-indigo-200"
             href="#companies"
           >
-            <span className="text-xs font-black text-indigo-600">05</span>
+            <div className="flex min-h-7 items-center justify-between gap-3">
+              <span className="text-xs font-black text-indigo-600">05</span>
+              {mockInterviewResult && (
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700">
+                  Apply now
+                </span>
+              )}
+            </div>
             <h2 className="mt-3 font-extrabold">Browse companies</h2>
             <p className="mt-1 text-sm leading-6 text-slate-500">
               Explore roles and apply using your profile.
