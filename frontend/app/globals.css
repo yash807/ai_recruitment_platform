@@ -213,6 +213,8 @@ html { scroll-behavior: smooth; }
 .brand-capability p { margin-top: 12px; max-width: 510px; color: #8e9aae; font-size: 13px; line-height: 1.8; }
 
 .brand-journey { background: #fff; }
+.brand-final-section { position: relative; isolation: isolate; background: #07101f; }
+.brand-final-section::before { content: ""; position: absolute; z-index: -1; height: 1px; inset: 0 0 auto; background: linear-gradient(90deg, transparent, rgba(83,137,224,.45) 25% 75%, transparent); box-shadow: 0 -22px 65px rgba(22,74,164,.12); }
 .journey-experience { position: relative; display: grid; max-width: 1080px; gap: 24px; margin: 60px auto 0; padding: 22px; overflow: hidden; border: 1px solid #dce4ef; border-radius: 26px; background: radial-gradient(circle at 7% 10%, rgba(39,103,238,.16), transparent 25%), linear-gradient(145deg, #0e1b31, #07101f); box-shadow: 0 30px 85px rgba(18,42,77,.2); }
 .journey-experience::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .22; background-image: radial-gradient(rgba(128,164,221,.5) .7px, transparent .7px); background-size: 18px 18px; mask-image: linear-gradient(110deg, black, transparent 58%); }
 .journey-preview { position: relative; z-index: 1; display: flex; min-height: 410px; flex-direction: column; align-items: center; justify-content: center; padding: 28px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: rgba(255,255,255,.035); text-align: center; }

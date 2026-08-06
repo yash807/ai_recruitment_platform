@@ -175,7 +175,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="brand-journey px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="outcomes">
+      <section className="brand-journey px-5 pb-20 pt-24 text-[#091426] sm:px-8 lg:pb-24 lg:pt-32" id="outcomes">
         <div className="mx-auto max-w-7xl">
           <p className="brand-eyebrow text-center">How it works</p>
           <h2 className="mx-auto mt-4 max-w-3xl text-center text-4xl font-black tracking-[-.035em] sm:text-6xl">One continuous journey.<br /><span className="text-[#2165f5]">Every signal connected.</span></h2>
@@ -184,7 +184,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="px-5 pb-10 sm:px-8">
+      <section className="brand-final-section px-5 pb-10 pt-16 sm:px-8 lg:pt-20">
         <div className="brand-cta mx-auto max-w-7xl">
           <div><p className="brand-kicker"><SparkIcon /> Ready to move talent forward?</p><h2>Build the evidence.<br />Make the right match.</h2></div>
           <div className="flex flex-col gap-3 sm:flex-row"><Link className="brand-button brand-button-light" href="/student">Create your profile <ArrowIcon /></Link><Link className="brand-button brand-button-ghost" href="/company">Start hiring</Link></div>
