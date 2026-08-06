@@ -328,14 +328,14 @@ export default function SelfIntroductionPage() {
   const backHref = studentId ? `/student/dashboard?student_id=${studentId}` : "/student";
 
   return (
-    <main className="surface-grid relative min-h-screen bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
+    <main className="brand-app-shell surface-grid relative min-h-screen bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
       <div className="relative mx-auto max-w-6xl">
-        <nav className="glass-card flex items-center justify-between rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
+        <nav className="brand-app-nav glass-card flex items-center justify-between rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
           <Link className="text-sm font-bold text-slate-600 hover:text-indigo-700" href={backHref}>← Student dashboard</Link>
           <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">Required before mock interview</span>
         </nav>
 
-        <header className="mt-7 rounded-3xl bg-slate-950 px-7 py-8 text-white shadow-2xl sm:px-10">
+        <header className="brand-app-hero mt-7 rounded-3xl bg-slate-950 px-7 py-8 text-white shadow-2xl sm:px-10">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Step 2 · Numbered self-introduction</p>
           <h1 className="mt-3 text-3xl font-black sm:text-5xl">Post one video. We time every answer.</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">

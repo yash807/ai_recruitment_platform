@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { checkBackendHealth } from "../backend-health";
+import { BrandMark } from "../ui/brand";
 
 // All browser requests stay on the Next.js origin and are proxied to FastAPI.
 const API_URL = "/api";
@@ -438,22 +439,14 @@ export default function RecruiterPage() {
   const selectedJob = jobs.find((job) => job.id === selectedJobId);
 
   return (
-    <main className="surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-8 text-slate-900 sm:px-8">
+    <main className="brand-app-shell surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-8 text-slate-900 sm:px-8">
       <div className="pointer-events-none absolute -left-40 top-20 h-96 w-96 rounded-full bg-blue-200/50 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 top-96 h-96 w-96 rounded-full bg-indigo-100/70 blur-3xl" />
 
       <div className="relative mx-auto max-w-6xl">
         {/* Company workspace navigation. */}
-        <nav className="glass-card mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-sm font-black text-white shadow-lg shadow-blue-200">
-              AT
-            </span>
-            <div>
-              <p className="text-sm font-bold leading-none">AI Talent</p>
-              <p className="mt-1 text-xs text-slate-500">Company workspace</p>
-            </div>
-          </div>
+        <nav className="brand-app-nav glass-card mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
+          <BrandMark subtitle="Company workspace" />
           <div className="flex items-center gap-3">
             <Link
               className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-950"
@@ -479,7 +472,7 @@ export default function RecruiterPage() {
         </nav>
 
         {/* Company introduction. */}
-        <header className="fade-up mb-8 rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-11">
+        <header className="brand-app-hero fade-up mb-8 rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-11">
           <p className="mb-4 inline-flex rounded-full border border-blue-300/20 bg-blue-400/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-200">
             Company hiring workspace
           </p>

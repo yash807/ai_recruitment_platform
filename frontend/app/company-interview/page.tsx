@@ -362,7 +362,7 @@ export default function CompanyInterviewPage() {
   const currentQuestion = interview?.questions[currentQuestionIndex];
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#07110f] px-5 py-7 text-white sm:px-8">
+    <main className="brand-dark-shell relative min-h-screen overflow-hidden bg-[#07110f] px-5 py-7 text-white sm:px-8">
       <div className="pointer-events-none absolute -left-32 top-20 h-96 w-96 rounded-full bg-emerald-600/20 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 bottom-10 h-96 w-96 rounded-full bg-cyan-500/10 blur-3xl" />
 

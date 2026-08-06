@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { BrandMark } from "../ui/brand";
+
 const API_URL = "/api";
 
 const emptyRegistration = {
@@ -189,16 +191,11 @@ export default function StudentAccessPage() {
   }
 
   return (
-    <main className="surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
+    <main className="brand-app-shell surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
       <div className="pointer-events-none absolute -left-32 top-24 h-80 w-80 rounded-full bg-indigo-200/60 blur-3xl" />
       <div className="relative mx-auto max-w-5xl">
-        <nav className="mb-8 flex items-center justify-between">
-          <Link className="flex items-center gap-3" href="/">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-600 text-sm font-black text-white">
-              AT
-            </span>
-            <span className="font-extrabold">AI Talent</span>
-          </Link>
+        <nav className="brand-app-nav mb-8 flex items-center justify-between rounded-2xl border border-white/80 px-4 py-3">
+          <BrandMark subtitle="Student workspace" />
           <Link
             className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-white"
             href="/"
@@ -208,7 +205,7 @@ export default function StudentAccessPage() {
         </nav>
 
         <div className="grid overflow-hidden rounded-3xl border border-white bg-white shadow-2xl shadow-slate-300/50 lg:grid-cols-[0.82fr_1.18fr]">
-          <section className="bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-800 p-8 text-white sm:p-10">
+          <section className="brand-app-hero bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-800 p-8 text-white sm:p-10">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-200">
               Student portal
             </p>

@@ -11,6 +11,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { checkBackendHealth } from "../../backend-health";
+import { BrandMark } from "../../ui/brand";
 
 const API_URL = "/api";
 
@@ -428,20 +429,12 @@ function StudentDashboardContent() {
     .join("");
 
   return (
-    <main className="surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
+    <main className="brand-app-shell surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
       <div className="pointer-events-none absolute -left-32 top-32 h-96 w-96 rounded-full bg-indigo-200/50 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 top-[36rem] h-96 w-96 rounded-full bg-emerald-100/70 blur-3xl" />
       <div className="relative mx-auto max-w-6xl">
-        <nav className="glass-card relative z-30 mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
-          <Link className="flex items-center gap-3" href="/">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-sm font-black text-white">
-              AT
-            </span>
-            <div>
-              <p className="text-sm font-bold leading-none">AI Talent</p>
-              <p className="mt-1 text-xs text-slate-500">Student dashboard</p>
-            </div>
-          </Link>
+        <nav className="brand-app-nav glass-card relative z-30 mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
+          <BrandMark subtitle="Student dashboard" />
           <div className="relative">
             <button
               aria-expanded={profileMenuOpen}
@@ -528,7 +521,7 @@ function StudentDashboardContent() {
           </div>
         </nav>
 
-        <header className="fade-up overflow-hidden rounded-3xl bg-slate-950 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10">
+        <header className="brand-app-hero fade-up overflow-hidden rounded-3xl bg-slate-950 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">
             Welcome back
           </p>

@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { checkBackendHealth } from "../../backend-health";
+import { BrandMark } from "../../ui/brand";
 import {
   COLLEGE_SESSION_KEY,
   CollegeIdentity,
@@ -165,22 +165,12 @@ export default function CollegeDashboardPage() {
   };
 
   return (
-    <main className="surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
+    <main className="brand-app-shell surface-grid relative min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
       <div className="pointer-events-none absolute -left-32 top-20 h-96 w-96 rounded-full bg-emerald-200/50 blur-3xl" />
       <div className="pointer-events-none absolute -right-36 top-[30rem] h-96 w-96 rounded-full bg-cyan-100/70 blur-3xl" />
       <div className="relative mx-auto max-w-6xl">
-        <nav className="glass-card mb-7 flex items-center justify-between rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
-          <Link className="flex items-center gap-3" href="/">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-sm font-black text-white">
-              AT
-            </span>
-            <div>
-              <p className="text-sm font-bold leading-none">AI Talent</p>
-              <p className="mt-1 text-xs text-slate-500">
-                College placement insights
-              </p>
-            </div>
-          </Link>
+        <nav className="brand-app-nav glass-card mb-7 flex items-center justify-between rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
+          <BrandMark subtitle="College placement insights" />
           <div className="flex items-center gap-3">
             <span
               className={`rounded-full px-3 py-1.5 text-xs font-bold ${
@@ -201,7 +191,7 @@ export default function CollegeDashboardPage() {
           </div>
         </nav>
 
-        <header className="fade-up rounded-3xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-11">
+        <header className="brand-app-hero fade-up rounded-3xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 px-7 py-9 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-11">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-200">
             College placement command centre
           </p>

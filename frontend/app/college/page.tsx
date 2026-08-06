@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import { COLLEGE_SESSION_KEY, getCollegeIdentity } from "./college-access";
+import { BrandMark } from "../ui/brand";
 
 export default function CollegeLoginPage() {
   const router = useRouter();
@@ -28,21 +29,13 @@ export default function CollegeLoginPage() {
   }
 
   return (
-    <main className="surface-grid relative grid min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
+    <main className="brand-app-shell surface-grid relative grid min-h-screen overflow-hidden bg-slate-50 px-5 py-7 text-slate-900 sm:px-8">
       <div className="pointer-events-none absolute -left-32 top-20 h-96 w-96 rounded-full bg-emerald-200/50 blur-3xl" />
       <div className="pointer-events-none absolute -right-36 bottom-10 h-96 w-96 rounded-full bg-cyan-100/70 blur-3xl" />
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col">
-        <nav className="glass-card flex items-center justify-between rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
-          <Link className="flex items-center gap-3" href="/">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-sm font-black text-white">
-              AT
-            </span>
-            <div>
-              <p className="text-sm font-bold leading-none">AI Talent</p>
-              <p className="mt-1 text-xs text-slate-500">College portal</p>
-            </div>
-          </Link>
+        <nav className="brand-app-nav glass-card flex items-center justify-between rounded-2xl border border-white/80 px-5 py-3 shadow-sm">
+          <BrandMark subtitle="College workspace" />
           <Link
             className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-white"
             href="/"
@@ -52,7 +45,7 @@ export default function CollegeLoginPage() {
         </nav>
 
         <div className="grid flex-1 items-center gap-8 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:py-14">
-          <section className="fade-up rounded-3xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 px-7 py-10 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-14">
+          <section className="brand-app-hero fade-up rounded-3xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 px-7 py-10 text-white shadow-2xl shadow-slate-300/60 sm:px-10 sm:py-14">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-200">
               Verified college access
             </p>

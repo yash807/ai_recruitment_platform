@@ -532,14 +532,14 @@ export default function ResumeBuilderPage() {
   const backHref = studentId ? `/student/dashboard?student_id=${studentId}` : "/student";
 
   return (
-    <main className="resume-builder-page min-h-screen bg-slate-100 px-4 py-6 text-slate-900 sm:px-7">
+    <main className="brand-app-shell resume-builder-page min-h-screen bg-slate-100 px-4 py-6 text-slate-900 sm:px-7">
       <div className="mx-auto max-w-[1500px]">
-        <nav className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-5 py-3 shadow-sm">
+        <nav className="brand-app-nav no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-5 py-3 shadow-sm">
           <Link className="text-sm font-black text-slate-600 hover:text-indigo-700" href={backHref}>← Student dashboard</Link>
           <div className="flex items-center gap-3"><span className="text-xs font-bold text-slate-500">{completedSections}/10 sections added</span><button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50" disabled={saving || loading} onClick={() => void saveDraft()} type="button">{saving ? "Saving…" : "Save draft"}</button><button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50" disabled={loading} onClick={() => window.print()} type="button">Download PDF</button></div>
         </nav>
 
-        <header className="no-print mt-5 rounded-3xl bg-gradient-to-br from-indigo-950 to-slate-950 px-7 py-7 text-white shadow-xl">
+        <header className="brand-app-hero no-print mt-5 rounded-3xl bg-gradient-to-br from-indigo-950 to-slate-950 px-7 py-7 text-white shadow-xl">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-indigo-300">ATS-friendly resume builder</p>
           <h1 className="mt-2 text-3xl font-black sm:text-4xl">Build once. Preview every change.</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Complete only the sections that apply to you. Keep bullets truthful, concise, and focused on actions and measurable outcomes.</p>

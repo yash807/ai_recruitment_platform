@@ -391,7 +391,7 @@ export default function MockInterviewPage() {
   const completed = interview?.status === "Completed";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#080b18] px-5 py-7 text-white sm:px-8">
+    <main className="brand-dark-shell relative min-h-screen overflow-hidden bg-[#080b18] px-5 py-7 text-white sm:px-8">
       {/* Dark interview-room background */}
       <div className="pointer-events-none absolute -left-32 top-20 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 bottom-10 h-96 w-96 rounded-full bg-cyan-500/10 blur-3xl" />
