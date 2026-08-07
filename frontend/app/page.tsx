@@ -40,6 +40,59 @@ const capabilities = [
   ["Placement analytics", "Help placement teams understand progress, bottlenecks and published outcomes.", "INSIGHT"],
 ] as const;
 
+const platformBenefits = [
+  {
+    number: "01",
+    title: "One connected profile",
+    description: "Resume evidence, professional information, interview progress, applications and published outcomes stay connected instead of living in separate tools.",
+  },
+  {
+    number: "02",
+    title: "Explainable intelligence",
+    description: "ATS readiness, role alignment and candidate matching are supported by visible criteria, practical feedback and clear score breakdowns.",
+  },
+  {
+    number: "03",
+    title: "Every stakeholder aligned",
+    description: "Professionals build readiness, recruitment teams review consistent evidence, and institutes understand placement progress from the same platform.",
+  },
+] as const;
+
+const faqs = [
+  {
+    question: "What does AI Talent do?",
+    answer: "AI Talent brings professional profiles, ATS resume analysis, resume building, video introductions, mock interviews, job matching, company interviews, recruitment decisions and institute placement analytics into one connected platform.",
+  },
+  {
+    question: "Who is the platform designed for?",
+    answer: "It is designed for students and working professionals preparing for opportunities, recruitment teams publishing roles and reviewing applicants, and institutes monitoring placement readiness and outcomes.",
+  },
+  {
+    question: "Where is AI used in the workflow?",
+    answer: "AI supports role-aware interview-question generation and speech transcription. Resume readiness, eligibility, matching and final score calculations remain rule-based and explainable, while the final recruitment decision stays with the recruitment team.",
+  },
+  {
+    question: "What happens if the question-generation service is unavailable?",
+    answer: "The interview remains usable. The backend automatically switches to safe, deterministic questions grounded in the selected role or job description and records the fallback reason for transparency.",
+  },
+  {
+    question: "How does AI Talent protect interview information?",
+    answer: "Video recordings and face-continuity references are not sent to the question-generation provider. Company interview generation receives only limited job context, required skills, previous questions and answer transcripts.",
+  },
+  {
+    question: "Can professionals build and download a resume?",
+    answer: "Yes. The Resume Builder supports education, experience, projects, skills, certifications, achievements, leadership, languages and interests, with both two-column and ATS-focused single-column templates.",
+  },
+  {
+    question: "What can recruitment teams do?",
+    answer: "Recruitment teams can publish jobs, define eligibility rules, discover matching candidates, invite professionals, review company-interview results and publish a final decision to the candidate.",
+  },
+  {
+    question: "How do institutes benefit?",
+    answer: "Institutes receive a focused view of student applications, interview completion, hiring outcomes and readiness trends, helping placement teams identify progress and areas that need support.",
+  },
+] as const;
+
 export default function Home() {
   return (
     <main className="brand-landing min-h-screen overflow-hidden bg-[#07101f] text-white">
@@ -47,6 +100,7 @@ export default function Home() {
         <BrandMark inverse />
         <div className="hidden items-center gap-8 lg:flex">
           <a href="#platform">Platform</a>
+          <a href="#about">About</a>
           <a href="#workspaces">Workspaces</a>
           <a href="#intelligence">Intelligence</a>
           <a href="#outcomes">How it works</a>
@@ -137,6 +191,53 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="brand-about-section px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="about">
+        <div className="mx-auto max-w-7xl">
+          <div className="brand-about-layout">
+            <div>
+              <p className="brand-eyebrow">About AI Talent</p>
+              <h2 className="brand-about-title">Everything talent needs.<br /><span>One connected platform.</span></h2>
+              <p className="brand-about-copy">AI Talent replaces disconnected career and recruitment tools with one continuous system. A professional can build a profile, understand a resume, practise interviews, apply to a role and receive a published result without starting again at every stage.</p>
+              <p className="brand-about-copy">That same verified journey gives recruitment teams clearer candidate evidence and gives institutes a reliable view of readiness and placement outcomes—all while keeping scoring understandable and final decisions human-led.</p>
+              <div className="brand-about-tags" aria-label="Platform principles">
+                <span>Profile to placement</span>
+                <span>Explainable by design</span>
+                <span>Human-led decisions</span>
+              </div>
+            </div>
+
+            <div className="brand-platform-map" aria-label="AI Talent unified platform overview">
+              <div className="brand-platform-map-top">
+                <span className="brand-status-dot" />
+                <span>Unified talent workflow</span>
+                <small>One source of truth</small>
+              </div>
+              <div className="brand-platform-core">
+                <span className="brand-symbol brand-symbol-static" aria-hidden="true">
+                  <svg viewBox="0 0 42 42"><path d="M11 12.5 21 6l10 6.5v17L21 36l-10-6.5v-17Z" /><path d="m15.5 23.5 4-9h3l4 9M17 20.5h8M29.5 14v10" /></svg>
+                </span>
+                <div><small>AI Talent</small><strong>Talent intelligence layer</strong></div>
+                <span className="brand-platform-live">Connected</span>
+              </div>
+              <div className="brand-platform-flow">
+                {["Build profile", "Analyze", "Interview", "Match", "Decide"].map((step, index) => (
+                  <div key={step}><span>0{index + 1}</span><strong>{step}</strong></div>
+                ))}
+              </div>
+              <div className="brand-platform-audiences">
+                <span>Students & professionals</span><span>Recruitment</span><span>Institutes</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="brand-benefit-grid">
+            {platformBenefits.map((benefit) => (
+              <article key={benefit.title}><span>{benefit.number}</span><h3>{benefit.title}</h3><p>{benefit.description}</p></article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="brand-light-section px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="workspaces">
         <div className="mx-auto max-w-7xl">
           <div className="brand-section-heading">
@@ -181,6 +282,25 @@ export default function Home() {
           <h2 className="mx-auto mt-4 max-w-3xl text-center text-4xl font-black tracking-[-.035em] sm:text-6xl">One continuous journey.<br /><span className="text-[#2165f5]">Every signal connected.</span></h2>
           <p className="mx-auto mt-5 max-w-2xl text-center text-sm leading-7 text-slate-500 sm:text-base">Follow the path from a professional profile to a clear, explainable recruitment outcome.</p>
           <JourneyAnimation />
+        </div>
+      </section>
+
+      <section className="brand-faq-section px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="faq">
+        <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[.72fr_1.28fr] lg:gap-20">
+          <div className="brand-faq-intro">
+            <p className="brand-eyebrow">Frequently asked questions</p>
+            <h2>Clear answers.<br /><span>No black boxes.</span></h2>
+            <p>Understand how the platform works, where AI is used and how every audience benefits from one connected workflow.</p>
+            <Link className="brand-faq-link" href="/student">Explore the platform <ArrowIcon /></Link>
+          </div>
+          <div className="brand-faq-list">
+            {faqs.map((faq, index) => (
+              <details className="brand-faq-item" key={faq.question} open={index === 0}>
+                <summary><span>{faq.question}</span><i aria-hidden="true" /></summary>
+                <p>{faq.answer}</p>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 
