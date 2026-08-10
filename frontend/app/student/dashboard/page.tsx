@@ -1373,6 +1373,25 @@ function StudentDashboardContent() {
                 </section>
               )}
 
+              <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-800 p-5 text-white shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-indigo-200">
+                  Your next chapter
+                </p>
+                <h3 className="mt-3 text-lg font-black tracking-tight">
+                  Find clarity for what comes next.
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-indigo-100">
+                  Explore mentorship, career direction, and practical support for your journey ahead.
+                </p>
+                <Link
+                  className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-indigo-700 transition hover:-translate-y-0.5 hover:bg-indigo-50"
+                  href={studentId ? `/student/guidance?student_id=${studentId}` : "/student/guidance"}
+                  onClick={() => setProfilePanelOpen(false)}
+                >
+                  Explore your options <span aria-hidden="true">→</span>
+                </Link>
+              </section>
+
               <button
                 className="w-full rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-black text-rose-600 hover:bg-rose-50"
                 onClick={signOut}
