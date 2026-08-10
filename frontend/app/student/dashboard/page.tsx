@@ -783,6 +783,55 @@ function StudentDashboardContent() {
           </section>
         )}
 
+        <section
+          aria-labelledby="next-chapter-title"
+          className="relative mt-7 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-700 px-6 py-7 text-white shadow-2xl shadow-indigo-200/60 sm:px-8 sm:py-8"
+        >
+          <div className="pointer-events-none absolute -right-12 -top-20 h-56 w-56 rounded-full bg-violet-500/30 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-cyan-400/15 blur-3xl" />
+          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-indigo-200">
+                Your next chapter
+              </p>
+              <h2
+                className="mt-3 text-2xl font-black tracking-tight sm:text-3xl"
+                id="next-chapter-title"
+              >
+                Find clarity for what comes next.
+              </h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-indigo-100 sm:text-base">
+                Explore mentorship, career direction, and practical support for
+                your journey ahead.
+              </p>
+            </div>
+            <Link
+              className="group inline-flex w-full shrink-0 items-center justify-center gap-3 rounded-xl bg-white px-5 py-3.5 text-sm font-black text-indigo-700 shadow-lg shadow-slate-950/20 transition hover:-translate-y-0.5 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/40 sm:w-auto"
+              href={
+                studentId
+                  ? `/student/guidance?student_id=${studentId}`
+                  : "/student/guidance"
+              }
+            >
+              Explore your options
+              <svg
+                aria-hidden="true"
+                className="h-4 w-4 transition-transform group-hover:translate-x-1"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M5 12h14m-6-6 6 6-6 6"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2.5"
+                />
+              </svg>
+            </Link>
+          </div>
+        </section>
+
         {selectedCompanyInterviewResult && (
           <>
             <button

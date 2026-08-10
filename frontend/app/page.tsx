@@ -34,10 +34,19 @@ const portals = [
 ] as const;
 
 const capabilities = [
-  ["Resume intelligence", "Analyze ATS readiness, role alignment and practical improvements before applying.", "ATS"],
-  ["Adaptive interviews", "Generate role-aware questions and evaluate every response with consistent criteria.", "AI"],
-  ["Candidate matching", "Connect job evidence, profile data and interview performance into a clear fit signal.", "MATCH"],
-  ["Placement analytics", "Help placement teams understand progress, bottlenecks and published outcomes.", "INSIGHT"],
+  { title: "Resume intelligence", description: "Analyze ATS readiness, role alignment and practical improvements before applying.", tag: "ATS", metric: "92%", metricLabel: "role alignment", signals: [92, 78, 86] },
+  { title: "Adaptive interviews", description: "Generate role-aware questions and evaluate every response with consistent criteria.", tag: "AI", metric: "5/5", metricLabel: "signals evaluated", signals: [68, 91, 76] },
+  { title: "Candidate matching", description: "Connect job evidence, profile data and interview performance into a clear fit signal.", tag: "MATCH", metric: "86", metricLabel: "explainable fit", signals: [86, 73, 94] },
+  { title: "Placement analytics", description: "Help placement teams understand progress, bottlenecks and published outcomes.", tag: "INSIGHT", metric: "+18%", metricLabel: "readiness lift", signals: [61, 80, 96] },
+] as const;
+
+const tickerItems = [
+  "Resume intelligence",
+  "Role-aware AI",
+  "Verified introductions",
+  "Adaptive interviews",
+  "Explainable matching",
+  "Placement insights",
 ] as const;
 
 const platformBenefits = [
@@ -45,16 +54,25 @@ const platformBenefits = [
     number: "01",
     title: "One connected profile",
     description: "Resume evidence, professional information, interview progress, applications and published outcomes stay connected instead of living in separate tools.",
+    metric: "01",
+    metricLabel: "source",
+    signal: "Profile continuity",
   },
   {
     number: "02",
     title: "Explainable intelligence",
     description: "ATS readiness, role alignment and candidate matching are supported by visible criteria, practical feedback and clear score breakdowns.",
+    metric: "100%",
+    metricLabel: "visible",
+    signal: "Decision clarity",
   },
   {
     number: "03",
     title: "Every stakeholder aligned",
     description: "Professionals build readiness, recruitment teams review consistent evidence, and institutes understand placement progress from the same platform.",
+    metric: "03",
+    metricLabel: "views",
+    signal: "Shared outcomes",
   },
 ] as const;
 
@@ -116,9 +134,17 @@ export default function Home() {
         <div className="brand-hero-grid mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-20 sm:px-8 lg:grid-cols-[1.04fr_.96fr] lg:pb-28 lg:pt-28">
           <div className="brand-reveal relative z-10">
             <p className="brand-kicker"><SparkIcon /> The talent intelligence operating system</p>
-            <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[.98] tracking-[-0.045em] sm:text-6xl lg:text-[5.35rem]">
-              From potential to<br />
-              <span className="brand-gradient-text">proof of talent.</span>
+            <h1 className="brand-hero-title" aria-label="From Potential 2 Proof of Talent.">
+              <span className="brand-hero-title-line" aria-hidden="true">
+                <span className="brand-word" style={{ animationDelay: "80ms" }}>From</span>{" "}
+                <span className="brand-word brand-word-outline" style={{ animationDelay: "160ms" }}>Potential</span>
+              </span>
+              <span className="brand-hero-title-line brand-gradient-text" aria-hidden="true">
+                <span className="brand-word brand-word-two" style={{ animationDelay: "240ms" }}>2</span>{" "}
+                <span className="brand-word" style={{ animationDelay: "320ms" }}>Proof</span>{" "}
+                <span className="brand-word" style={{ animationDelay: "400ms" }}>of</span>{" "}
+                <span className="brand-word" style={{ animationDelay: "480ms" }}>Talent.</span>
+              </span>
             </h1>
             <p className="mt-7 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
               AI Talent connects students and professionals, recruitment teams and institutes through one explainable system for readiness, interviews, matching and placement outcomes.
@@ -128,7 +154,7 @@ export default function Home() {
                 Start as a student <ArrowIcon />
               </Link>
               <Link className="brand-button brand-button-ghost" href="/company">
-                Explore hiring workspace
+                Explore hiring workspace <ArrowIcon />
               </Link>
             </div>
             <div className="mt-10 flex flex-wrap gap-x-7 gap-y-3 text-xs font-bold uppercase tracking-[.16em] text-slate-400">
@@ -183,6 +209,16 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="brand-ticker" aria-label="AI Talent capabilities">
+        <div className="brand-ticker-track">
+          {[0, 1].map((loopIndex) => (
+            <div className="brand-ticker-group" aria-hidden={loopIndex === 1} key={loopIndex}>
+              {tickerItems.map((item) => <span key={item}>{item}<i>✦</i></span>)}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="brand-proof-strip">
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-px px-5 sm:px-8 lg:grid-cols-4">
           {[['01', 'Connected talent profile'], ['03', 'Purpose-built workspaces'], ['05', 'Evidence signals per candidate'], ['100%', 'Decision transparency']].map(([value, label]) => (
@@ -193,7 +229,7 @@ export default function Home() {
 
       <section className="brand-about-section px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="about">
         <div className="mx-auto max-w-7xl">
-          <div className="brand-about-layout">
+          <div className="brand-about-layout brand-scroll-reveal">
             <div>
               <p className="brand-eyebrow">About AI Talent</p>
               <h2 className="brand-about-title">Everything talent needs.<br /><span>One connected platform.</span></h2>
@@ -230,9 +266,22 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="brand-benefit-grid">
-            {platformBenefits.map((benefit) => (
-              <article key={benefit.title}><span>{benefit.number}</span><h3>{benefit.title}</h3><p>{benefit.description}</p></article>
+          <div className="brand-benefit-grid brand-scroll-reveal">
+            {platformBenefits.map((benefit, index) => (
+              <article className={`brand-benefit-card brand-benefit-card-${index + 1}`} key={benefit.title}>
+                <span className="brand-benefit-scan" aria-hidden="true" />
+                <div className="brand-benefit-head">
+                  <span>{benefit.number}</span>
+                  <span className="brand-benefit-live"><i /> Signal live</span>
+                </div>
+                <div className="brand-benefit-visual" aria-label={`${benefit.metric} ${benefit.metricLabel}`}>
+                  <span><strong>{benefit.metric}</strong><small>{benefit.metricLabel}</small></span>
+                  <i /><i /><i />
+                </div>
+                <h3>{benefit.title}</h3>
+                <p>{benefit.description}</p>
+                <div className="brand-benefit-footer"><span>{benefit.signal}</span><b>↗</b></div>
+              </article>
             ))}
           </div>
         </div>
@@ -240,11 +289,11 @@ export default function Home() {
 
       <section className="brand-light-section px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="workspaces">
         <div className="mx-auto max-w-7xl">
-          <div className="brand-section-heading">
+          <div className="brand-section-heading brand-scroll-reveal">
             <div><p className="brand-eyebrow">One system. Every perspective.</p><h2>Focused workspaces.<br /><span>Shared intelligence.</span></h2></div>
             <p>Each stakeholder gets exactly what they need, while every action contributes to one connected view of professional readiness and recruitment outcomes.</p>
           </div>
-          <div className="mt-14 grid gap-5 lg:grid-cols-3">
+          <div className="brand-scroll-reveal mt-14 grid gap-5 lg:grid-cols-3">
             {portals.map((portal, index) => (
               <article className={`brand-portal-card brand-portal-${portal.accent}`} key={portal.title}>
                 <div className="flex items-center justify-between"><span className="brand-card-number">{portal.number}</span><span className="brand-card-arrow">↗</span></div>
@@ -259,25 +308,35 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="brand-dark-section px-5 py-24 sm:px-8 lg:py-32" id="intelligence">
+      <section className="brand-dark-section brand-viewport-section px-5 py-24 sm:px-8 lg:py-32" id="intelligence">
         <div className="mx-auto max-w-7xl">
-          <div className="brand-section-heading brand-section-heading-dark">
-            <div><p className="brand-eyebrow">Intelligence with a reason</p><h2>More signal.<br /><span>Less guesswork.</span></h2></div>
+          <div className="brand-section-heading brand-section-heading-dark brand-scroll-reveal">
+            <div><p className="brand-eyebrow">Intelligence with a reason</p><h2>More Signal.<br /><span>Less Guesswork.</span></h2></div>
             <p>Every score is connected to candidate evidence, role expectations and structured responses—so people can understand what the AI sees.</p>
           </div>
-          <div className="mt-14 grid gap-4 md:grid-cols-2">
-            {capabilities.map(([title, description, tag], index) => (
-              <article className="brand-capability" key={title}>
-                <div><span>0{index + 1}</span><b>{tag}</b></div>
-                <h3>{title}</h3><p>{description}</p>
+          <div className="brand-capability-grid brand-scroll-reveal">
+            {capabilities.map((capability, index) => (
+              <article className={`brand-capability brand-capability-${index + 1}`} key={capability.title} tabIndex={0}>
+                <span className="brand-capability-beam" aria-hidden="true" />
+                <div className="brand-capability-head"><span>0{index + 1}</span><b>{capability.tag}</b></div>
+                <div className="brand-capability-copy">
+                  <h3>{capability.title}</h3><p>{capability.description}</p>
+                </div>
+                <div className="brand-capability-signal" aria-label={`${capability.metric} ${capability.metricLabel}`}>
+                  <div><small>Live evidence</small><strong>{capability.metric}</strong><span>{capability.metricLabel}</span></div>
+                  <div className="brand-signal-bars" aria-hidden="true">
+                    {capability.signals.map((signal, signalIndex) => <i key={signalIndex} style={{ height: `${signal}%`, animationDelay: `${signalIndex * 120}ms` }} />)}
+                  </div>
+                  <span className="brand-signal-live"><i /> Live</span>
+                </div>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="brand-journey px-5 pb-20 pt-24 text-[#091426] sm:px-8 lg:pb-24 lg:pt-32" id="outcomes">
-        <div className="mx-auto max-w-7xl">
+      <section className="brand-journey brand-viewport-section px-5 pb-20 pt-24 text-[#091426] sm:px-8 lg:pb-24 lg:pt-32" id="outcomes">
+        <div className="brand-scroll-reveal mx-auto max-w-7xl">
           <p className="brand-eyebrow text-center">How it works</p>
           <h2 className="mx-auto mt-4 max-w-3xl text-center text-4xl font-black tracking-[-.035em] sm:text-6xl">One continuous journey.<br /><span className="text-[#2165f5]">Every signal connected.</span></h2>
           <p className="mx-auto mt-5 max-w-2xl text-center text-sm leading-7 text-slate-500 sm:text-base">Follow the path from a professional profile to a clear, explainable recruitment outcome.</p>
@@ -286,7 +345,7 @@ export default function Home() {
       </section>
 
       <section className="brand-faq-section px-5 py-24 text-[#091426] sm:px-8 lg:py-32" id="faq">
-        <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[.72fr_1.28fr] lg:gap-20">
+        <div className="brand-scroll-reveal mx-auto grid max-w-7xl gap-14 lg:grid-cols-[.72fr_1.28fr] lg:gap-20">
           <div className="brand-faq-intro">
             <p className="brand-eyebrow">Frequently asked questions</p>
             <h2>Clear answers.<br /><span>No black boxes.</span></h2>
@@ -306,8 +365,31 @@ export default function Home() {
 
       <section className="brand-final-section px-5 pb-10 pt-16 sm:px-8 lg:pt-20">
         <div className="brand-cta mx-auto max-w-7xl">
-          <div><p className="brand-kicker"><SparkIcon /> Ready to move talent forward?</p><h2>Build the evidence.<br />Make the right match.</h2></div>
-          <div className="flex flex-col gap-3 sm:flex-row"><Link className="brand-button brand-button-light" href="/student">Create your profile <ArrowIcon /></Link><Link className="brand-button brand-button-ghost" href="/company">Start hiring</Link></div>
+          <span className="brand-cta-orbit brand-cta-orbit-one" aria-hidden="true" />
+          <span className="brand-cta-orbit brand-cta-orbit-two" aria-hidden="true" />
+          <span className="brand-cta-scan" aria-hidden="true" />
+          <div className="brand-cta-copy">
+            <p className="brand-kicker"><SparkIcon /> Ready to move talent forward?</p>
+            <h2>Build the evidence.<br /><span>Make the right match.</span></h2>
+            <p className="brand-cta-description">One connected platform for professional readiness, explainable hiring and placement outcomes.</p>
+            <div className="brand-cta-proof" aria-label="Platform benefits">
+              <span><i /> Explainable signals</span>
+              <span><i /> Human-led decisions</span>
+              <span><i /> One shared workflow</span>
+            </div>
+          </div>
+          <div className="brand-cta-panel">
+            <div className="brand-cta-panel-top"><span><i /> Platform ready</span><b>Choose your path</b></div>
+            <div className="brand-cta-signal">
+              <div><small>Connected talent signal</small><strong>Profile → evidence → outcome</strong></div>
+              <span>LIVE</span>
+            </div>
+            <div className="brand-cta-actions">
+              <Link className="brand-button brand-button-light" href="/student">Create your profile <ArrowIcon /></Link>
+              <Link className="brand-button brand-button-ghost" href="/company">Start hiring <ArrowIcon /></Link>
+            </div>
+            <p className="brand-cta-note">No black-box scoring. Every decision stays understandable.</p>
+          </div>
         </div>
       </section>
 
