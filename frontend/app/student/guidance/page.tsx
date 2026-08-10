@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { BrandMark } from "../../ui/brand";
 
-export default function StudentGuidancePage() {
+function StudentGuidanceContent() {
   const searchParams = useSearchParams();
   const studentId = searchParams.get("student_id");
   const dashboardHref = studentId
@@ -59,5 +60,13 @@ export default function StudentGuidancePage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function StudentGuidancePage() {
+  return (
+    <Suspense fallback={null}>
+      <StudentGuidanceContent />
+    </Suspense>
   );
 }
